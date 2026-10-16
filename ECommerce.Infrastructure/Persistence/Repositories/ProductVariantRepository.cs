@@ -16,10 +16,11 @@ internal sealed class ProductVariantRepository(ECommerceDbContext dbContext) : I
         await dbContext.ProductVariants.AddAsync(productVariant, cancellationToken);
     }
 
-    public async Task<ProductVariant?> GetByIdWithDetailsAsync(Guid productVariantId, CancellationToken cancellationToken = default)
+    public async Task<ProductVariant?> GetByIdWithDetailsAsync(Guid productVariantId,
+        CancellationToken cancellationToken = default)
     {
-        return await dbContext.ProductVariants.AsNoTracking()
-            .Include(x => x.SellerOffers)
+        return await dbContext.ProductVariants
+            .AsNoTracking().Include(x => x.Product).Include(x => x.SellerOffers)
             .FirstOrDefaultAsync(x => x.Id == productVariantId, cancellationToken);
     }
 

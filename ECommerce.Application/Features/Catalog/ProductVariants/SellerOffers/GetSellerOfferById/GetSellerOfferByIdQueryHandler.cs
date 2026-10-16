@@ -1,5 +1,6 @@
 ﻿using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
+using ECommerce.Domain.Enums;
 using MediatR;
 
 namespace ECommerce.Application.Features.Catalog.ProductVariants.SellerOffers.GetSellerOfferById;
@@ -11,6 +12,10 @@ public sealed class GetSellerOfferByIdQueryHandler(ISellerOfferRepository seller
     {
         var offer = await sellerOfferRepository.GetByIdAsync(query.Id, cancellationToken);
         if (offer is null)
+            throw new NotFoundException($"Seller offer with id '{query.Id}' was not found.");
+
+        if (offer.Status != SellerOfferStatus.Active || offer.ProductVariant.Status != ProductVariantStatus.Active ||
+            offer.ProductVariant.Product.Status != ProductStatus.Active)
             throw new NotFoundException($"Seller offer with id '{query.Id}' was not found.");
 
         return new SellerOfferDto(

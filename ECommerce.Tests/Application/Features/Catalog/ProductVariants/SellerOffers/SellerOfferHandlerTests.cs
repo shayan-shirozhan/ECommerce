@@ -282,42 +282,24 @@ public sealed class SellerOfferHandlerTests
     }
 
     [Test]
-    public async Task GetSellerOfferById_should_return_mapped_dto_when_offer_exists()
+    public async Task GetSellerOfferById_should_throw_not_found_when_offer_is_inactive()
     {
-        var sellerId = Guid.NewGuid();
-        var productVariantId = Guid.NewGuid();
-
-        var sellerOffer = SellerOffer.Create(
-            sellerId,
-            productVariantId,
-            250_000,
-            15);
-    
         var sellerOfferRepository = new FakeSellerOfferRepository
         {
-            Offer = sellerOffer
+            Offer = SellerOffer.Create(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                250_000,
+                15)
         };
 
-        var handler = new GetSellerOfferByIdQueryHandler(
-            sellerOfferRepository);
+        var handler = new GetSellerOfferByIdQueryHandler(sellerOfferRepository);
+        var query = new GetSellerOfferByIdQuery(sellerOfferRepository.Offer!.Id);
 
-        var query = new GetSellerOfferByIdQuery(sellerOffer.Id);
+        var exception = Assert.ThrowsAsync<NotFoundException>(
+            async () => await handler.Handle(query, CancellationToken.None));
 
-        var result = await handler.Handle(
-            query,
-            CancellationToken.None);
-
-        Assert.That(result, Is.Not.Null);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(result!.Id, Is.EqualTo(sellerOffer.Id));
-            Assert.That(result.SellerId, Is.EqualTo(sellerId));
-            Assert.That(result.Price, Is.EqualTo(250_000));
-            Assert.That(result.Stock, Is.EqualTo(15));
-            Assert.That(result.Status, Is.EqualTo(SellerOfferStatus.Inactive));
-            Assert.That(result.RowVersion, Is.EqualTo(sellerOffer.RowVersion));
-        });
+        Assert.That(exception!.Message, Does.Contain("Seller offer"));
     }
 
     [Test]

@@ -13,7 +13,11 @@ internal sealed class ProductImageRepository(ECommerceDbContext dbContext) : IPr
 
     public async Task<ProductImage?> GetByIdAsync(Guid productImageId, CancellationToken cancellationToken = default)
     {
-        return await dbContext.ProductImages.AsNoTracking()
+        return await dbContext.ProductImages
+            .AsNoTracking()
+            .Include(x => x.Product)
+            .Include(x => x.ProductVariant)
+            .ThenInclude(x => x!.Product)
             .FirstOrDefaultAsync(x => x.Id == productImageId, cancellationToken);
     }
 }
