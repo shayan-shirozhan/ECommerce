@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/TestResults/
+**/coverage/
+.git/
+.github/
+.vs/
+.idea/
+.env
+.env.*
+appsettings.Local.json
+*.user
+*.suo

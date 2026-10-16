@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ecommerce
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ecommerce"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: 8080
+      ConnectionStrings__ECommerceDb: "Host=postgres;Port=5432;Database=ecommerce;Username=postgres;Password=${POSTGRES_PASSWORD};GSS Encryption Mode=Disable"
+      Jwt__SecretKey: "${JWT_SECRET_KEY:?Set JWT_SECRET_KEY in .env}"
+      Jwt__Issuer: ECommerce.API
+      Jwt__Audience: ECommerce.API
+      Jwt__ExpirationMinutes: 60
+      HttpsRedirection__Enabled: "false"
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

@@ -5,6 +5,8 @@ using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Seed;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,11 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+
+    // Keep local development startup self-contained; production migrations are deployed separately.
+    if (app.Environment.IsDevelopment())
+        await dbContext.Database.MigrateAsync();
+
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
 
     await DatabaseSeeder.SeedRolesAsync(roleManager);
@@ -44,9 +51,13 @@ using (var scope = app.Services.CreateScope())
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
+{
     app.MapOpenApi();
+    app.MapScalarApiReference();
+}
 
-app.UseHttpsRedirection();
+if (app.Configuration.GetValue("HttpsRedirection:Enabled", true))
+    app.UseHttpsRedirection();
 
 app.UseAuthentication();
 
