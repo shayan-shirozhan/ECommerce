@@ -54,4 +54,20 @@ public class Product : AuditableEntity
     //method's
     public static Product Create(string name, string description, Guid brandId, Guid categoryId) =>
         new(name, description, brandId, categoryId);
+
+    public void Activate()
+    {
+        if (Status == ProductStatus.Active)
+            throw new DomainException("Product is already active.");
+
+        Status = ProductStatus.Active;
+    }
+
+    public void Deactivate()
+    {
+        if (Status == ProductStatus.Inactive)
+            throw new DomainException("Product is already inactive.");
+
+        Status = ProductStatus.Inactive;
+    }
 }

@@ -1,5 +1,7 @@
 ﻿using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.Products.CreateProduct;
+using ECommerce.Application.Features.Catalog.Products.ActivateProduct;
+using ECommerce.Application.Features.Catalog.Products.DeactivateProduct;
 using ECommerce.Application.Features.Catalog.Products.GetProductById;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -18,6 +20,20 @@ public class ProductsController(ISender sender) : ControllerBase
     {
         var result = await sender.Send(new GetProductByIdQuery(id), cancellationToken);
         return Ok(result);
+    }
+
+    [HttpPut("{id:guid}/activate")]
+    public async Task<IActionResult> Activate(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new ActivateProductCommand(id), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPut("{id:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new DeactivateProductCommand(id), cancellationToken);
+        return NoContent();
     }
 
     [HttpPost]

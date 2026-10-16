@@ -32,6 +32,12 @@ public class ProductVariant : AuditableEntity
         Status = ProductVariantStatus.Draft;
     }
 
+    private ProductVariant(Product product, string sku, string? name)
+        : this(product.Id, sku, name)
+    {
+        Product = product;
+    }
+
 
     //prop's
     public Guid ProductId { get; private set; }
@@ -46,4 +52,38 @@ public class ProductVariant : AuditableEntity
 
     //method's
     public static ProductVariant Create(Guid productId, string sku, string? name) => new(productId, sku, name);
+
+    public static ProductVariant Create(Product product, string sku, string? name)
+    {
+        if (product is null)
+            throw new DomainException("Product is required.");
+
+        return new ProductVariant(product, sku, name);
+    }
+
+    public void Activate(Product parentProduct)
+    {
+        if (parentProduct is null)
+            throw new DomainException("Product is required.");
+
+        if (parentProduct.Id != ProductId)
+            throw new DomainException("Product variant does not belong to the specified product.");
+
+        if (parentProduct.Status != ProductStatus.Active)
+            throw new DomainException("Product must be active before its variants can be activated.");
+
+        if (Status == ProductVariantStatus.Active)
+            throw new DomainException("Product variant is already active.");
+
+        Product = parentProduct;
+        Status = ProductVariantStatus.Active;
+    }
+
+    public void Deactivate()
+    {
+        if (Status == ProductVariantStatus.Inactive)
+            throw new DomainException("Product variant is already inactive.");
+
+        Status = ProductVariantStatus.Inactive;
+    }
 }

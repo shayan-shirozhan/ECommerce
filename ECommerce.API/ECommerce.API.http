@@ -76,6 +76,20 @@ Authorization: Bearer {{AdminToken}}
 
 ###
 
+### Activate Product (Admin)
+
+PUT {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}/activate
+Authorization: Bearer {{AdminToken}}
+
+###
+
+### Deactivate Product (Admin)
+
+PUT {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}/deactivate
+Authorization: Bearer {{AdminToken}}
+
+###
+
 ### Create Product - Validation Test
 
 POST {{ECommerce_API_HostAddress}}/api/products
@@ -160,6 +174,20 @@ Authorization: Bearer {{AdminToken}}
 
 GET {{ECommerce_API_HostAddress}}/api/product-variants/{{ProductVariantId}}
 Accept: application/json
+
+###
+
+### Activate Product Variant (Admin)
+
+PUT {{ECommerce_API_HostAddress}}/api/product-variants/{{ProductVariantId}}/activate
+Authorization: Bearer {{AdminToken}}
+
+###
+
+### Deactivate Product Variant (Admin)
+
+PUT {{ECommerce_API_HostAddress}}/api/product-variants/{{ProductVariantId}}/deactivate
+Authorization: Bearer {{AdminToken}}
 
 # -------------------------------------------------------------------
 

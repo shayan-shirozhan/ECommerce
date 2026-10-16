@@ -22,4 +22,12 @@ internal sealed class ProductVariantRepository(ECommerceDbContext dbContext) : I
             .Include(x => x.SellerOffers)
             .FirstOrDefaultAsync(x => x.Id == productVariantId, cancellationToken);
     }
+
+    public async Task<ProductVariant?> GetByIdForUpdateAsync(Guid productVariantId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.ProductVariants
+            .Include(x => x.Product)
+            .FirstOrDefaultAsync(x => x.Id == productVariantId, cancellationToken);
+    }
 }
