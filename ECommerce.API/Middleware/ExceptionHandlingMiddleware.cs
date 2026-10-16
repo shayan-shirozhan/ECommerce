@@ -40,6 +40,15 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
                 exception.Message,
                 context.RequestAborted);
         }
+        catch (BusinessRuleException exception)
+        {
+            await WriteProblemDetailsAsync(
+                context,
+                StatusCodes.Status409Conflict,
+                "Business rule violation.",
+                exception.Message,
+                context.RequestAborted);
+        }
         catch (ConcurrencyConflictException exception)
         {
             await WriteProblemDetailsAsync(

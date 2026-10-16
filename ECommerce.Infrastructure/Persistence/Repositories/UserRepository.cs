@@ -13,10 +13,21 @@ internal sealed class UserRepository(ECommerceDbContext dbContext) : IUserReposi
         return await dbContext.Users.AnyAsync(x => x.Id == userId, cancellationToken);
     }
 
-    public async Task SetSellerStatusAsync(Guid userId, SellerStatus status, CancellationToken cancellationToken = default)
+    public async Task<SellerStatus> GetSellerStatusAsync(Guid userId, CancellationToken cancellationToken = default)
+    {
+        var status = await dbContext.Users
+            .Where(x => x.Id == userId)
+            .Select(x => (SellerStatus?)x.SellerStatus)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return status ?? throw new NotFoundException($"User with id '{userId}' was not found.");
+    }
+
+    public async Task SetSellerStatusAsync(Guid userId, SellerStatus status,
+        CancellationToken cancellationToken = default)
     {
         var user = await dbContext.Users.FirstOrDefaultAsync(x => x.Id == userId, cancellationToken);
-        if(user is null)
+        if (user is null)
             throw new NotFoundException($"User with id '{userId}' was not found.");
 
         user.SellerStatus = status;

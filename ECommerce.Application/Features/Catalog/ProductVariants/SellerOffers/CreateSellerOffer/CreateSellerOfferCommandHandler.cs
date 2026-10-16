@@ -2,6 +2,7 @@
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Domain.Entities;
+using ECommerce.Domain.Enums;
 using MediatR;
 
 namespace ECommerce.Application.Features.Catalog.ProductVariants.SellerOffers.CreateSellerOffer;
@@ -16,9 +17,17 @@ public class CreateSellerOfferCommandHandler(
     {
         var sellerId = currentUser.UserId ?? throw new UnauthorizedException("Authenticated user is required.");
 
-        var variantExist = await productVariantRepository.ExistsAsync(command.ProductVariantId, cancellationToken);
-        if (!variantExist)
+        var variant = await productVariantRepository.GetByIdWithDetailsAsync(
+            command.ProductVariantId,
+            cancellationToken);
+
+        if (variant is null ||
+            variant.Status != ProductVariantStatus.Active ||
+            variant.Product is null ||
+            variant.Product.Status != ProductStatus.Active)
+        {
             throw new NotFoundException($"Product variant with id '{command.ProductVariantId}' was not found.");
+        }
 
         var sellerOffer = SellerOffer.Create(
             sellerId,

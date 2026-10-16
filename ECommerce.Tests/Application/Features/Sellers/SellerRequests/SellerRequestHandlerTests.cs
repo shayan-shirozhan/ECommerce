@@ -25,8 +25,14 @@ public sealed class SellerRequestHandlerTests
         var sellerRequestRepository = new FakeSellerRequestRepository();
         var unitOfWork = new FakeUnitOfWork();
 
+        var userRepository = new FakeUserRepository
+        {
+            SellerStatus = SellerStatus.None
+        };
+
         var handler = new CreateSellerRequestCommandHandler(
             sellerRequestRepository,
+            userRepository,
             currentUser,
             unitOfWork);
 
@@ -64,6 +70,10 @@ public sealed class SellerRequestHandlerTests
             Assert.That(
                 unitOfWork.SaveChangesCalled,
                 Is.True);
+
+            Assert.That(
+                userRepository.LastSellerStatus,
+                Is.EqualTo(SellerStatus.Pending));
         });
     }
 
@@ -78,8 +88,14 @@ public sealed class SellerRequestHandlerTests
         var sellerRequestRepository = new FakeSellerRequestRepository();
         var unitOfWork = new FakeUnitOfWork();
 
+        var userRepository = new FakeUserRepository
+        {
+            SellerStatus = SellerStatus.None
+        };
+
         var handler = new CreateSellerRequestCommandHandler(
             sellerRequestRepository,
+            userRepository,
             currentUser,
             unitOfWork);
 
@@ -104,6 +120,14 @@ public sealed class SellerRequestHandlerTests
             Assert.That(
                 unitOfWork.SaveChangesCalled,
                 Is.False);
+
+            Assert.That(
+                userRepository.LastSellerStatus,
+                Is.Null);
+
+            Assert.That(
+                userRepository.SetSellerStatusCalled,
+                Is.False);
         });
     }
 
@@ -116,6 +140,8 @@ public sealed class SellerRequestHandlerTests
         public Guid? LastUserId { get; private set; }
 
         public SellerStatus? LastSellerStatus { get; private set; }
+
+        public SellerStatus SellerStatus { get; set; } = SellerStatus.None;
 
         public Task<bool> ExistsAsync(
             Guid userId,
@@ -135,6 +161,13 @@ public sealed class SellerRequestHandlerTests
 
             return Task.CompletedTask;
         }
+
+        public Task<SellerStatus> GetSellerStatusAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(SellerStatus);
+        }
     }
 
     private sealed class FakeSellerRequestRepository : ISellerRequestRepository
@@ -142,6 +175,8 @@ public sealed class SellerRequestHandlerTests
         public SellerRequest? AddedRequest { get; private set; }
 
         public SellerRequest? Request { get; set; }
+
+        public SellerRequest? PendingRequest { get; set; }
 
         public Task AddAsync(
             SellerRequest sellerRequest,
@@ -159,6 +194,20 @@ public sealed class SellerRequestHandlerTests
                 return Task.FromResult<SellerRequest?>(null);
 
             return Task.FromResult<SellerRequest?>(Request);
+        }
+
+        public Task<SellerRequest?> GetPendingByUserIdAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            if (PendingRequest is null ||
+                PendingRequest.UserId != userId ||
+                PendingRequest.Status != SellerRequestStatus.Pending)
+            {
+                return Task.FromResult<SellerRequest?>(null);
+            }
+
+            return Task.FromResult<SellerRequest?>(PendingRequest);
         }
     }
 
@@ -186,7 +235,7 @@ public sealed class SellerRequestHandlerTests
         public bool IsInRole(string role) =>
             Roles.Contains(role);
     }
-    
+
     private sealed class FakeUserRoleService : IUserRoleService
     {
         public bool AddToRoleCalled { get; private set; }
@@ -205,7 +254,7 @@ public sealed class SellerRequestHandlerTests
             return Task.CompletedTask;
         }
     }
-    
+
     [Test]
     public async Task GetSellerRequestById_should_throw_not_found_when_request_does_not_exist()
     {
@@ -249,7 +298,7 @@ public sealed class SellerRequestHandlerTests
         {
             Request = sellerRequest
         };
-        
+
         var  currentUser = new FakeCurrentUser
         {
             UserId = userId
@@ -295,7 +344,7 @@ public sealed class SellerRequestHandlerTests
                 Is.EqualTo(sellerRequest.ReviewedAt));
         });
     }
-    
+
     [Test]
     public async Task GetSellerRequestById_should_throw_unauthorized_when_user_is_not_authenticated()
     {
@@ -326,7 +375,7 @@ public sealed class SellerRequestHandlerTests
             exception,
             Is.Not.Null);
     }
-    
+
     [Test]
     public async Task GetSellerRequestById_should_throw_forbidden_when_user_is_not_owner()
     {
@@ -360,7 +409,7 @@ public sealed class SellerRequestHandlerTests
             exception!.Message,
             Does.Contain("not allowed"));
     }
-    
+
     [Test]
     public async Task GetSellerRequestById_should_allow_admin_to_view_any_request()
     {
@@ -394,7 +443,7 @@ public sealed class SellerRequestHandlerTests
 
         Assert.That(result, Is.Not.Null);
     }
-    
+
     [Test]
     public async Task GetSellerRequestById_should_return_request_for_owner()
     {
@@ -443,7 +492,7 @@ public sealed class SellerRequestHandlerTests
         };
 
         var unitOfWork = new FakeUnitOfWork();
-        
+
         var currentUser = new FakeCurrentUser
         {
             UserId = Guid.NewGuid()
@@ -502,7 +551,7 @@ public sealed class SellerRequestHandlerTests
         };
 
         var unitOfWork = new FakeUnitOfWork();
-        
+
         var currentUser = new FakeCurrentUser
         {
             UserId = adminUserId
@@ -537,7 +586,7 @@ public sealed class SellerRequestHandlerTests
             Assert.That(
                 userRoleService.LastRole,
                 Is.EqualTo(ApplicationRoles.Seller));
-            
+
             Assert.That(
                 sellerRequest.Status,
                 Is.EqualTo(SellerRequestStatus.Approved));
@@ -643,7 +692,7 @@ public sealed class SellerRequestHandlerTests
         };
 
         var unitOfWork = new FakeUnitOfWork();
-        
+
         var currentUser = new FakeCurrentUser
         {
             UserId = Guid.NewGuid()
@@ -704,7 +753,7 @@ public sealed class SellerRequestHandlerTests
         {
             UserId = adminUserId
         };
-        
+
         var handler = new RejectSellerRequestCommandHandler(
             sellerRequestRepository,
             userRepository,
@@ -743,6 +792,199 @@ public sealed class SellerRequestHandlerTests
             Assert.That(
                 userRepository.LastSellerStatus,
                 Is.EqualTo(SellerStatus.Rejected));
+
+            Assert.That(
+                unitOfWork.SaveChangesCalled,
+                Is.True);
+        });
+    }
+
+    [Test]
+    public async Task CreateSellerRequest_should_throw_conflict_when_user_status_is_pending()
+    {
+        var userId = Guid.NewGuid();
+
+        var currentUser = new FakeCurrentUser
+        {
+            UserId = userId
+        };
+
+        var sellerRequestRepository = new FakeSellerRequestRepository();
+
+        var userRepository = new FakeUserRepository
+        {
+            SellerStatus = SellerStatus.Pending
+        };
+
+        var unitOfWork = new FakeUnitOfWork();
+
+        var handler = new CreateSellerRequestCommandHandler(
+            sellerRequestRepository,
+            userRepository,
+            currentUser,
+            unitOfWork);
+
+        var exception = Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await handler.Handle(
+                new CreateSellerRequestCommand("Another request."),
+                CancellationToken.None));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                exception!.Message,
+                Does.Contain("pending"));
+
+            Assert.That(
+                sellerRequestRepository.AddedRequest,
+                Is.Null);
+
+            Assert.That(
+                unitOfWork.SaveChangesCalled,
+                Is.False);
+        });
+    }
+
+    [Test]
+    public async Task CreateSellerRequest_should_throw_conflict_when_user_is_already_active_seller()
+    {
+        var userId = Guid.NewGuid();
+
+        var currentUser = new FakeCurrentUser
+        {
+            UserId = userId
+        };
+
+        var sellerRequestRepository = new FakeSellerRequestRepository();
+
+        var userRepository = new FakeUserRepository
+        {
+            SellerStatus = SellerStatus.Active
+        };
+
+        var unitOfWork = new FakeUnitOfWork();
+
+        var handler = new CreateSellerRequestCommandHandler(
+            sellerRequestRepository,
+            userRepository,
+            currentUser,
+            unitOfWork);
+
+        var exception = Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await handler.Handle(
+                new CreateSellerRequestCommand("Another request."),
+                CancellationToken.None));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                exception!.Message,
+                Does.Contain("already an active seller"));
+
+            Assert.That(
+                sellerRequestRepository.AddedRequest,
+                Is.Null);
+
+            Assert.That(
+                unitOfWork.SaveChangesCalled,
+                Is.False);
+        });
+    }
+
+    [Test]
+    public async Task CreateSellerRequest_should_throw_conflict_when_seller_is_suspended()
+    {
+        var userId = Guid.NewGuid();
+
+        var currentUser = new FakeCurrentUser
+        {
+            UserId = userId
+        };
+
+        var sellerRequestRepository = new FakeSellerRequestRepository();
+
+        var userRepository = new FakeUserRepository
+        {
+            SellerStatus = SellerStatus.Suspended
+        };
+
+        var unitOfWork = new FakeUnitOfWork();
+
+        var handler = new CreateSellerRequestCommandHandler(
+            sellerRequestRepository,
+            userRepository,
+            currentUser,
+            unitOfWork);
+
+        var exception = Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await handler.Handle(
+                new CreateSellerRequestCommand("Another request."),
+                CancellationToken.None));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(
+                exception!.Message,
+                Does.Contain("Suspended seller"));
+
+            Assert.That(
+                sellerRequestRepository.AddedRequest,
+                Is.Null);
+
+            Assert.That(
+                unitOfWork.SaveChangesCalled,
+                Is.False);
+        });
+    }
+
+    [Test]
+    public async Task CreateSellerRequest_should_allow_user_to_reapply_after_rejection()
+    {
+        var userId = Guid.NewGuid();
+
+        var currentUser = new FakeCurrentUser
+        {
+            UserId = userId
+        };
+
+        var sellerRequestRepository = new FakeSellerRequestRepository();
+
+        var userRepository = new FakeUserRepository
+        {
+            SellerStatus = SellerStatus.Rejected
+        };
+
+        var unitOfWork = new FakeUnitOfWork();
+
+        var handler = new CreateSellerRequestCommandHandler(
+            sellerRequestRepository,
+            userRepository,
+            currentUser,
+            unitOfWork);
+
+        var result = await handler.Handle(
+            new CreateSellerRequestCommand("I want to try again."),
+            CancellationToken.None);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Not.EqualTo(Guid.Empty));
+
+            Assert.That(
+                sellerRequestRepository.AddedRequest,
+                Is.Not.Null);
+
+            Assert.That(
+                sellerRequestRepository.AddedRequest!.UserId,
+                Is.EqualTo(userId));
+
+            Assert.That(
+                sellerRequestRepository.AddedRequest.Status,
+                Is.EqualTo(SellerRequestStatus.Pending));
+
+            Assert.That(
+                userRepository.LastSellerStatus,
+                Is.EqualTo(SellerStatus.Pending));
 
             Assert.That(
                 unitOfWork.SaveChangesCalled,

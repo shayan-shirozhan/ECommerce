@@ -17,6 +17,11 @@ internal sealed class ProductRepository(ECommerceDbContext dbContext) : IProduct
             .FirstOrDefaultAsync(x => x.Id == productId, cancellationToken);
     }
 
+    public async Task<Product?> GetByIdForUpdateAsync(Guid productId, CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Products.FirstOrDefaultAsync(x => x.Id == productId, cancellationToken);
+    }
+
     public async Task AddAsync(Product product, CancellationToken cancellationToken = default)
     {
         await dbContext.Products.AddAsync(product, cancellationToken);

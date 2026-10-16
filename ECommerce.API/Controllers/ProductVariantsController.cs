@@ -1,5 +1,7 @@
 ﻿using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.ProductVariants.CreateProductVariant;
+using ECommerce.Application.Features.Catalog.ProductVariants.ActivateProductVariant;
+using ECommerce.Application.Features.Catalog.ProductVariants.DeactivateProductVariant;
 using ECommerce.Application.Features.Catalog.ProductVariants.GetProductVariantById;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -18,6 +20,20 @@ public class ProductVariantsController(ISender sender) : ControllerBase
     {
         var variant = await sender.Send(new GetProductVariantByIdQuery(id), cancellationToken);
         return Ok(variant);
+    }
+
+    [HttpPut("{id:guid}/activate")]
+    public async Task<IActionResult> Activate(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new ActivateProductVariantCommand(id), cancellationToken);
+        return NoContent();
+    }
+
+    [HttpPut("{id:guid}/deactivate")]
+    public async Task<IActionResult> Deactivate(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new DeactivateProductVariantCommand(id), cancellationToken);
+        return NoContent();
     }
 
     [HttpPost]

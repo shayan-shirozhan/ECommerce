@@ -574,7 +574,9 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("ReviewedByUserId");
 
-                    b.HasIndex("UserId", "Status");
+                    b.HasIndex("UserId")
+                        .IsUnique()
+                        .HasFilter("\"Status\" = 1");
 
                     b.ToTable("SellerRequests");
                 });

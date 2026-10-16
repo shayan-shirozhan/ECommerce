@@ -18,7 +18,8 @@ public sealed class SellerOfferHandlerTests
     public async Task CreateSellerOffer_should_create_offer_for_current_user_and_return_id()
     {
         var sellerId = Guid.NewGuid();
-        var productVariantId = Guid.NewGuid();
+        var variant = CreateActiveProductVariant();
+        var productVariantId = variant.Id;
 
         var currentUser = new FakeCurrentUser()
         {
@@ -27,7 +28,7 @@ public sealed class SellerOfferHandlerTests
 
         var productVariantRepository = new FakeProductVariantRepository
         {
-            ExistsResult = true
+            Variant = variant
         };
 
         var sellerOfferRepository = new FakeSellerOfferRepository();
@@ -89,10 +90,7 @@ public sealed class SellerOfferHandlerTests
             UserId = Guid.NewGuid()
         };
 
-        var productVariantRepository = new FakeProductVariantRepository
-        {
-            ExistsResult = false
-        };
+        var productVariantRepository = new FakeProductVariantRepository();
 
         var sellerOfferRepository = new FakeSellerOfferRepository();
         var unitOfWork = new FakeUnitOfWork();
@@ -127,6 +125,70 @@ public sealed class SellerOfferHandlerTests
     }
 
     [Test]
+    public async Task CreateSellerOffer_should_throw_not_found_when_product_variant_is_not_active()
+    {
+        var sellerId = Guid.NewGuid();
+        var product = CreateActiveProduct();
+        var variant = ProductVariant.Create(product, $"SKU-{Guid.NewGuid():N}", "Standard");
+
+        var productVariantRepository = new FakeProductVariantRepository
+        {
+            Variant = variant
+        };
+        var sellerOfferRepository = new FakeSellerOfferRepository();
+        var unitOfWork = new FakeUnitOfWork();
+        var handler = new CreateSellerOfferCommandHandler(
+            new FakeCurrentUser { UserId = sellerId },
+            productVariantRepository,
+            sellerOfferRepository,
+            unitOfWork);
+
+        var exception = Assert.ThrowsAsync<NotFoundException>(async () => await handler.Handle(
+            new CreateSellerOfferCommand(variant.Id, 100_000, 10),
+            CancellationToken.None));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Does.Contain("Product variant"));
+            Assert.That(sellerOfferRepository.AddedOffer, Is.Null);
+            Assert.That(unitOfWork.SaveChangesCalled, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task CreateSellerOffer_should_throw_not_found_when_parent_product_is_not_active()
+    {
+        var sellerId = Guid.NewGuid();
+        var product = CreateActiveProduct();
+        var variant = ProductVariant.Create(product, $"SKU-{Guid.NewGuid():N}", "Standard");
+        variant.Activate(product);
+        product.Deactivate();
+
+        var productVariantRepository = new FakeProductVariantRepository
+        {
+            Variant = variant
+        };
+        var sellerOfferRepository = new FakeSellerOfferRepository();
+        var unitOfWork = new FakeUnitOfWork();
+        var handler = new CreateSellerOfferCommandHandler(
+            new FakeCurrentUser { UserId = sellerId },
+            productVariantRepository,
+            sellerOfferRepository,
+            unitOfWork);
+
+        var exception = Assert.ThrowsAsync<NotFoundException>(async () => await handler.Handle(
+            new CreateSellerOfferCommand(variant.Id, 100_000, 10),
+            CancellationToken.None));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception!.Message, Does.Contain("Product variant"));
+            Assert.That(sellerOfferRepository.AddedOffer, Is.Null);
+            Assert.That(unitOfWork.SaveChangesCalled, Is.False);
+        });
+    }
+
+    [Test]
     public async Task CreateSellerOffer_should_throw_unauthorized_when_current_user_is_not_authenticated()
     {
         var currentUser = new FakeCurrentUser
@@ -134,10 +196,7 @@ public sealed class SellerOfferHandlerTests
             UserId = null
         };
 
-        var productVariantRepository = new FakeProductVariantRepository
-        {
-            ExistsResult = true
-        };
+        var productVariantRepository = new FakeProductVariantRepository();
 
         var sellerOfferRepository = new FakeSellerOfferRepository();
         var unitOfWork = new FakeUnitOfWork();
@@ -174,15 +233,34 @@ public sealed class SellerOfferHandlerTests
         });
     }
 
+    private static Product CreateActiveProduct()
+    {
+        var product = Product.Create(
+            "Test product",
+            "Test product description",
+            Guid.NewGuid(),
+            Guid.NewGuid());
+        product.Activate();
+        return product;
+    }
+
+    private static ProductVariant CreateActiveProductVariant()
+    {
+        var product = CreateActiveProduct();
+        var variant = ProductVariant.Create(product, $"SKU-{Guid.NewGuid():N}", "Standard");
+        variant.Activate(product);
+        return variant;
+    }
+
     private sealed class FakeProductVariantRepository : IProductVariantRepository
     {
-        public bool ExistsResult { get; set; }
+        public ProductVariant? Variant { get; set; }
 
         public Task<bool> ExistsAsync(
             Guid productVariantId,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(ExistsResult);
+            return Task.FromResult(Variant?.Id == productVariantId);
         }
 
         public Task AddAsync(
@@ -193,6 +271,16 @@ public sealed class SellerOfferHandlerTests
         }
 
         public Task<ProductVariant?> GetByIdWithDetailsAsync(
+            Guid productVariantId,
+            CancellationToken cancellationToken = default)
+        {
+            if (Variant is null || Variant.Id != productVariantId)
+                return Task.FromResult<ProductVariant?>(null);
+
+            return Task.FromResult<ProductVariant?>(Variant);
+        }
+
+        public Task<ProductVariant?> GetByIdForUpdateAsync(
             Guid productVariantId,
             CancellationToken cancellationToken = default)
         {
@@ -282,42 +370,24 @@ public sealed class SellerOfferHandlerTests
     }
 
     [Test]
-    public async Task GetSellerOfferById_should_return_mapped_dto_when_offer_exists()
+    public async Task GetSellerOfferById_should_throw_not_found_when_offer_is_inactive()
     {
-        var sellerId = Guid.NewGuid();
-        var productVariantId = Guid.NewGuid();
-
-        var sellerOffer = SellerOffer.Create(
-            sellerId,
-            productVariantId,
-            250_000,
-            15);
-    
         var sellerOfferRepository = new FakeSellerOfferRepository
         {
-            Offer = sellerOffer
+            Offer = SellerOffer.Create(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                250_000,
+                15)
         };
 
-        var handler = new GetSellerOfferByIdQueryHandler(
-            sellerOfferRepository);
+        var handler = new GetSellerOfferByIdQueryHandler(sellerOfferRepository);
+        var query = new GetSellerOfferByIdQuery(sellerOfferRepository.Offer!.Id);
 
-        var query = new GetSellerOfferByIdQuery(sellerOffer.Id);
+        var exception = Assert.ThrowsAsync<NotFoundException>(
+            async () => await handler.Handle(query, CancellationToken.None));
 
-        var result = await handler.Handle(
-            query,
-            CancellationToken.None);
-
-        Assert.That(result, Is.Not.Null);
-
-        Assert.Multiple(() =>
-        {
-            Assert.That(result!.Id, Is.EqualTo(sellerOffer.Id));
-            Assert.That(result.SellerId, Is.EqualTo(sellerId));
-            Assert.That(result.Price, Is.EqualTo(250_000));
-            Assert.That(result.Stock, Is.EqualTo(15));
-            Assert.That(result.Status, Is.EqualTo(SellerOfferStatus.Inactive));
-            Assert.That(result.RowVersion, Is.EqualTo(sellerOffer.RowVersion));
-        });
+        Assert.That(exception!.Message, Does.Contain("Seller offer"));
     }
 
     [Test]

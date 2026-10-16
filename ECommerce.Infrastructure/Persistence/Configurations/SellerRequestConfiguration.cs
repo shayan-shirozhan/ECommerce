@@ -13,7 +13,7 @@ public class SellerRequestConfiguration : IEntityTypeConfiguration<SellerRequest
         builder.Property(x => x.Reason).HasMaxLength(1000);
         builder.Property(x => x.Status).IsRequired();
 
-        builder.HasIndex(x => new { x.UserId, x.Status });
+        builder.HasIndex(x => x.UserId).IsUnique().HasFilter("\"Status\" = 1");
 
         builder.HasOne<ApplicationUser>()
             .WithMany()

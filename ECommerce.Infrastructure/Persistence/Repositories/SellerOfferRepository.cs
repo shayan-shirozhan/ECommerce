@@ -13,7 +13,8 @@ internal sealed class SellerOfferRepository(ECommerceDbContext dbContext) : ISel
 
     public async Task<SellerOffer?> GetByIdAsync(Guid sellerOfferId, CancellationToken cancellationToken = default)
     {
-        return await dbContext.SellerOffers.AsNoTracking()
+        return await dbContext.SellerOffers.AsNoTracking().Include(x => x.ProductVariant)
+            .ThenInclude(x => x.Product)
             .FirstOrDefaultAsync(x => x.Id == sellerOfferId, cancellationToken);
     }
 

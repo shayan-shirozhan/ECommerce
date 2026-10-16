@@ -16,6 +16,9 @@ public sealed class GetProductVariantByIdQueryHandler(IProductVariantRepository 
         if (variant is null)
             throw new NotFoundException($"Product variant with id '{query.Id}' was not found.");
 
+        if (variant.Status != ProductVariantStatus.Active || variant.Product.Status != ProductStatus.Active)
+            throw new NotFoundException($"Product variant with id '{query.Id}' was not found.");
+
         return new ProductVariantDto(variant.Id, variant.ProductId, variant.SKU, variant.Name, variant.Status,
             variant.SellerOffers.Where(offer => offer.Status == SellerOfferStatus.Active).Select(offer =>
                 new SellerOfferDto(offer.Id, offer.SellerId, offer.Price, offer.Stock, offer.Status,
