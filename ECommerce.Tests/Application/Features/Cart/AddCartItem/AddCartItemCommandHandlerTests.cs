@@ -56,6 +56,43 @@ public sealed class AddCartItemCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Handle_should_reject_additional_quantity_that_exceeds_stock_without_changing_cart()
+    {
+        var (userId, offerId) = await SeedOfferAsync(stock: 3);
+        using var provider = CreateProvider(userId);
+        await SendAsync(provider, new AddCartItemCommand(offerId, 2));
+
+        Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await SendAsync(provider, new AddCartItemCommand(offerId, 2)));
+
+        await using var verificationContext = CreateDbContext();
+        var cart = await verificationContext.Carts
+            .Include(entity => entity.Items)
+            .SingleAsync(entity => entity.UserId == userId);
+
+        Assert.That(cart.Items, Has.Count.EqualTo(1));
+        Assert.That(cart.Items.Single().Quantity, Is.EqualTo(2));
+    }
+
+    [Test]
+    public async Task Handle_should_allow_adding_quantity_up_to_exact_stock_limit()
+    {
+        var (userId, offerId) = await SeedOfferAsync(stock: 3);
+        using var provider = CreateProvider(userId);
+        await SendAsync(provider, new AddCartItemCommand(offerId, 2));
+
+        var response = await SendAsync(provider, new AddCartItemCommand(offerId, 1));
+
+        Assert.That(response.Quantity, Is.EqualTo(3));
+
+        await using var verificationContext = CreateDbContext();
+        var cart = await verificationContext.Carts
+            .Include(entity => entity.Items)
+            .SingleAsync(entity => entity.UserId == userId);
+        Assert.That(cart.Items.Single().Quantity, Is.EqualTo(3));
+    }
+
+    [Test]
     public async Task Handle_should_reject_quantity_greater_than_available_stock()
     {
         var (userId, offerId) = await SeedOfferAsync(stock: 3);
