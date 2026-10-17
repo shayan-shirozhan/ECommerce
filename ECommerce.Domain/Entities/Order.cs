@@ -84,6 +84,38 @@ public class Order : AuditableEntity
         return group;
     }
 
+    public void AddItem(
+        Guid sellerId,
+        Guid productId,
+        Guid productVariantId,
+        Guid sellerOfferId,
+        string productName,
+        string variantName,
+        string sellerName,
+        decimal unitPrice,
+        int quantity,
+        decimal discountAmount)
+    {
+        if (Status != OrderStatus.Pending)
+            throw new DomainException(
+                "Items can only be added to a pending order.");
+
+        var group = AddGroup(sellerId);
+
+        group.AddItem(new OrderItem(
+            productId,
+            productVariantId,
+            sellerOfferId,
+            productName,
+            variantName,
+            sellerName,
+            unitPrice,
+            quantity,
+            discountAmount));
+
+        RecalculateTotal();
+    }
+
     internal void RecalculateTotal()
     {
         TotalAmount = _groups.Sum(x => x.TotalAmount);
