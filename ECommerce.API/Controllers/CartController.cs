@@ -1,5 +1,7 @@
 using ECommerce.Application.Features.Cart.AddCartItem;
 using ECommerce.Application.Features.Cart.GetCart;
+using ECommerce.Application.Features.Cart.UpdateCartItem;
+using ECommerce.API.Contracts.Cart;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -19,6 +21,22 @@ public sealed class CartController(ISender sender) : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await sender.Send(new GetCartQuery(), cancellationToken);
+        return Ok(result);
+    }
+
+    [HttpPut("items/{sellerOfferId:guid}")]
+    [ProducesResponseType(typeof(UpdateCartItemResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<UpdateCartItemResponse>> UpdateItem(
+        [FromRoute] Guid sellerOfferId,
+        [FromBody] UpdateCartItemRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = new UpdateCartItemCommand(sellerOfferId, request.Quantity);
+        var result = await sender.Send(command, cancellationToken);
         return Ok(result);
     }
 
