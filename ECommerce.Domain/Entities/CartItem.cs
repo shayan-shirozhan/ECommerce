@@ -36,6 +36,10 @@ public class CartItem : Entity
         if (quantity <= 0)
             throw new DomainException("Quantity must be greater than zero.");
 
+        if (quantity > int.MaxValue - Quantity)
+            throw new DomainException(
+                "Cart item quantity exceeds the maximum supported value.");
+
         Quantity += quantity;
     }
 
