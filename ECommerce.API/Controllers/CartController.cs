@@ -1,5 +1,6 @@
 using ECommerce.Application.Features.Cart.AddCartItem;
 using ECommerce.Application.Features.Cart.GetCart;
+using ECommerce.Application.Features.Cart.RemoveCartItem;
 using ECommerce.Application.Features.Cart.UpdateCartItem;
 using ECommerce.API.Contracts.Cart;
 using MediatR;
@@ -38,6 +39,19 @@ public sealed class CartController(ISender sender) : ControllerBase
         var command = new UpdateCartItemCommand(sellerOfferId, request.Quantity);
         var result = await sender.Send(command, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpDelete("items/{sellerOfferId:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> RemoveItem(
+        [FromRoute] Guid sellerOfferId,
+        CancellationToken cancellationToken)
+    {
+        await sender.Send(new RemoveCartItemCommand(sellerOfferId), cancellationToken);
+        return NoContent();
     }
 
     [HttpPost("items")]
