@@ -69,6 +69,7 @@ public static class DependencyInjection
         services.AddScoped<ISellerRequestRepository, SellerRequestRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<ECommerceDbContext>());
+        services.AddScoped<ICartRepository, CartRepository>();
 
         return services;
     }
