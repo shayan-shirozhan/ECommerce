@@ -76,6 +76,21 @@ Authorization: Bearer {{AdminToken}}
 
 ###
 
+### Update Product (Admin)
+
+PUT {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "name": "Samsung S26 Ultra Updated",
+  "description": "Updated Samsung smartphone",
+  "brandId": "{{BrandId}}",
+  "categoryId": "{{CategoryId}}"
+}
+
+###
+
 ### Activate Product (Admin)
 
 PUT {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}/activate

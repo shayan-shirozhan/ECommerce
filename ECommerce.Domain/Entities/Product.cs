@@ -14,17 +14,7 @@ public class Product : AuditableEntity
 
     private Product(string name, string description, Guid brandId, Guid categoryId)
     {
-        if (string.IsNullOrWhiteSpace(name))
-            throw new DomainException("Product name is required.");
-
-        if (string.IsNullOrWhiteSpace(description))
-            throw new DomainException("Product description is required.");
-
-        if (brandId == Guid.Empty)
-            throw new DomainException("Brand ID is required.");
-
-        if (categoryId == Guid.Empty)
-            throw new DomainException("Category ID is required.");
+        ValidateDetails(name, description, brandId, categoryId);
 
         Name = name.Trim();
         Description = description.Trim();
@@ -55,6 +45,20 @@ public class Product : AuditableEntity
     public static Product Create(string name, string description, Guid brandId, Guid categoryId) =>
         new(name, description, brandId, categoryId);
 
+    public void UpdateDetails(
+        string name,
+        string description,
+        Guid brandId,
+        Guid categoryId)
+    {
+        ValidateDetails(name, description, brandId, categoryId);
+
+        Name = name.Trim();
+        Description = description.Trim();
+        BrandId = brandId;
+        CategoryId = categoryId;
+    }
+
     public void Activate()
     {
         if (Status == ProductStatus.Active)
@@ -69,5 +73,24 @@ public class Product : AuditableEntity
             throw new DomainException("Product is already inactive.");
 
         Status = ProductStatus.Inactive;
+    }
+
+    private static void ValidateDetails(
+        string name,
+        string description,
+        Guid brandId,
+        Guid categoryId)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new DomainException("Product name is required.");
+
+        if (string.IsNullOrWhiteSpace(description))
+            throw new DomainException("Product description is required.");
+
+        if (brandId == Guid.Empty)
+            throw new DomainException("Brand ID is required.");
+
+        if (categoryId == Guid.Empty)
+            throw new DomainException("Category ID is required.");
     }
 }
