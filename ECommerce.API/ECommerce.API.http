@@ -130,6 +130,62 @@ Accept: application/json
 GET {{ECommerce_API_HostAddress}}/api/products?page=0&pageSize=101
 Accept: application/json
 
+###
+
+### Filter Products by Category and Brand
+
+GET {{ECommerce_API_HostAddress}}/api/products?page=1&pageSize=10&categoryId={{CategoryId}}&brandId={{BrandId}}
+Accept: application/json
+
+###
+
+### Filter Products by Price Range
+
+GET {{ECommerce_API_HostAddress}}/api/products?minPrice=100000&maxPrice=200000
+Accept: application/json
+
+###
+
+### Search Products
+
+GET {{ECommerce_API_HostAddress}}/api/products?search=Samsung
+Accept: application/json
+
+###
+
+### Sort Products by Lowest Price - Ascending
+
+GET {{ECommerce_API_HostAddress}}/api/products?sortBy=price-asc
+Accept: application/json
+
+###
+
+### Sort Products by Lowest Price - Descending
+
+GET {{ECommerce_API_HostAddress}}/api/products?sortBy=price-desc
+Accept: application/json
+
+###
+
+### Sort Products by Newest
+
+GET {{ECommerce_API_HostAddress}}/api/products?sortBy=newest
+Accept: application/json
+
+###
+
+### Validate Invalid Price Range
+
+GET {{ECommerce_API_HostAddress}}/api/products?minPrice=200000&maxPrice=100000
+Accept: application/json
+
+###
+
+### Validate Invalid Sort Order
+
+GET {{ECommerce_API_HostAddress}}/api/products?sortBy=invalid
+Accept: application/json
+
 ### Get Brand
 
 GET {{ECommerce_API_HostAddress}}/api/brands/{{BrandId}}

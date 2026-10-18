@@ -13,12 +13,26 @@ public sealed class GetProductsQueryHandler(
         GetProductsQuery query,
         CancellationToken cancellationToken)
     {
+        var search = string.IsNullOrWhiteSpace(query.Search)
+            ? null
+            : query.Search.Trim();
+
+        var filter = new ProductListFilter(
+            query.CategoryId,
+            query.BrandId,
+            query.MinPrice,
+            query.MaxPrice,
+            search,
+            ParseSortOrder(query.SortBy));
+
         var totalCount = await productRepository.CountActiveAsync(
+            filter,
             cancellationToken);
 
         var products = await productRepository.GetActivePageAsync(
             query.Page,
             query.PageSize,
+            filter,
             cancellationToken);
 
         var items = products
@@ -26,13 +40,10 @@ public sealed class GetProductsQueryHandler(
                 product.Id,
                 product.Name,
                 product.Description,
-                new BrandDto(
-                    product.Brand!.Id,
-                    product.Brand.Name),
-                new CategoryDto(
-                    product.Category.Id,
-                    product.Category.Name),
-                product.CreatedAt))
+                new BrandDto(product.BrandId, product.BrandName),
+                new CategoryDto(product.CategoryId, product.CategoryName),
+                product.CreatedAt,
+                product.Price))
             .ToList();
 
         return new GetProductsResponse(
@@ -40,5 +51,19 @@ public sealed class GetProductsQueryHandler(
             query.Page,
             query.PageSize,
             totalCount);
+    }
+
+    private static ProductSortOrder ParseSortOrder(string? sortBy)
+    {
+        return sortBy?.Trim().ToLowerInvariant() switch
+        {
+            ProductSortOptions.PriceAscending =>
+                ProductSortOrder.PriceAscending,
+
+            ProductSortOptions.PriceDescending =>
+                ProductSortOrder.PriceDescending,
+
+            _ => ProductSortOrder.Newest
+        };
     }
 }

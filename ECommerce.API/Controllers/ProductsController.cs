@@ -20,10 +20,24 @@ public class ProductsController(ISender sender) : ControllerBase
     public async Task<ActionResult<GetProductsResponse>> GetAll(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10,
+        [FromQuery] Guid? categoryId = null,
+        [FromQuery] Guid? brandId = null,
+        [FromQuery] decimal? minPrice = null,
+        [FromQuery] decimal? maxPrice = null,
+        [FromQuery] string? search = null,
+        [FromQuery] string sortBy = ProductSortOptions.Newest,
         CancellationToken cancellationToken = default)
     {
         var result = await sender.Send(
-            new GetProductsQuery(page, pageSize),
+            new GetProductsQuery(
+                page,
+                pageSize,
+                categoryId,
+                brandId,
+                minPrice,
+                maxPrice,
+                search,
+                sortBy),
             cancellationToken);
 
         return Ok(result);

@@ -9,4 +9,5 @@ public sealed record ProductListItemDto(
     string Description,
     BrandDto Brand,
     CategoryDto Category,
-    DateTime CreatedAt);
+    DateTime CreatedAt,
+    decimal? Price);
