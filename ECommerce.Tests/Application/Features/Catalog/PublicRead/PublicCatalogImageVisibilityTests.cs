@@ -251,24 +251,21 @@ public sealed class PublicCatalogImageVisibilityTests
 
     private sealed class FakeProductRepository(Product? product) : IProductRepository
     {
-        public Task<IReadOnlyList<Product>> GetActivePageAsync(
+        public Task<IReadOnlyList<ProductListingItem>> GetActivePageAsync(
             int page,
             int pageSize,
+            ProductListFilter filter,
             CancellationToken cancellationToken = default)
         {
-            IReadOnlyList<Product> activeProducts =
-                product is { Status: ProductStatus.Active } activeProduct
-                    ? new[] { activeProduct }
-                    : Array.Empty<Product>();
-
-            return Task.FromResult(activeProducts);
+            return Task.FromResult<IReadOnlyList<ProductListingItem>>(
+                Array.Empty<ProductListingItem>());
         }
 
         public Task<int> CountActiveAsync(
+            ProductListFilter filter,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(
-                product?.Status == ProductStatus.Active ? 1 : 0);
+            return Task.FromResult(0);
         }
 
         public Task<Product?> GetByIdWithDetailsAsync(Guid productId, CancellationToken cancellationToken = default) =>

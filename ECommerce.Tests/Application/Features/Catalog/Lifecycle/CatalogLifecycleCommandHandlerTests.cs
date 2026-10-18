@@ -137,31 +137,21 @@ public sealed class CatalogLifecycleCommandHandlerTests
         public Task<Product?> GetByIdWithDetailsAsync(Guid productId, CancellationToken cancellationToken = default) =>
             Task.FromResult<Product?>(null);
 
-        public Task<IReadOnlyList<Product>> GetActivePageAsync(
+        public Task<IReadOnlyList<ProductListingItem>> GetActivePageAsync(
             int page,
             int pageSize,
+            ProductListFilter filter,
             CancellationToken cancellationToken = default)
         {
-            var activeProducts =
-                ProductForUpdate is { Status: ProductStatus.Active } product
-                    ? new[] { product }
-                    : Array.Empty<Product>();
-
-            IReadOnlyList<Product> products = activeProducts
-                .OrderByDescending(product => product.CreatedAt)
-                .ThenBy(product => product.Id)
-                .Skip(checked((int)(((long)page - 1L) * pageSize)))
-                .Take(pageSize)
-                .ToArray();
-
-            return Task.FromResult(products);
+            return Task.FromResult<IReadOnlyList<ProductListingItem>>(
+                Array.Empty<ProductListingItem>());
         }
 
         public Task<int> CountActiveAsync(
+            ProductListFilter filter,
             CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(
-                ProductForUpdate?.Status == ProductStatus.Active ? 1 : 0);
+            return Task.FromResult(0);
         }
 
         public Task<Product?> GetByIdForUpdateAsync(Guid productId, CancellationToken cancellationToken = default) =>

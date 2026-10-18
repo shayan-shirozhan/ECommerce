@@ -8,12 +8,14 @@ public interface IProductRepository
         Guid productId,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<Product>> GetActivePageAsync(
+    Task<IReadOnlyList<ProductListingItem>> GetActivePageAsync(
         int page,
         int pageSize,
+        ProductListFilter filter,
         CancellationToken cancellationToken = default);
 
     Task<int> CountActiveAsync(
+        ProductListFilter filter,
         CancellationToken cancellationToken = default);
 
     Task<Product?> GetByIdForUpdateAsync(

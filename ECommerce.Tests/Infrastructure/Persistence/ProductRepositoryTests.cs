@@ -1,5 +1,5 @@
+using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Domain.Entities;
-using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure.Persistence.Repositories;
 using ECommerce.Tests.Infrastructure.Fixtures;
 
@@ -8,98 +8,283 @@ namespace ECommerce.Tests.Infrastructure.Persistence;
 public sealed class ProductRepositoryTests : PostgresTestBase
 {
     [Test]
-    public async Task GetActivePageAsync_should_return_only_active_products_and_count_them()
+    public async Task Product_queries_should_apply_filters_sorting_and_active_visibility()
     {
         await using var dbContext = CreateDbContext();
 
-        var brand = Brand.Create("Pagination test brand");
-        var category = Category.Create("Pagination test category");
+        var samsung = Brand.Create("Samsung");
+        var apple = Brand.Create("Apple");
 
-        var firstActiveProduct = Product.Create(
-            "First active product",
-            "First active product description",
-            brand.Id,
-            category.Id);
-        firstActiveProduct.Activate();
+        var phones = Category.Create("Phones");
+        var accessories = Category.Create("Accessories");
 
-        var secondActiveProduct = Product.Create(
-            "Second active product",
-            "Second active product description",
-            brand.Id,
-            category.Id);
-        secondActiveProduct.Activate();
+        var sellerId = Guid.NewGuid();
+
+        var samsungPhone = CreateProductWithOffer(
+            "Samsung Phone",
+            "Samsung smartphone",
+            samsung,
+            phones,
+            100m,
+            "SKU-SAMSUNG-PHONE",
+            sellerId);
+
+        var samsungTablet = CreateProductWithOffer(
+            "Samsung Tablet",
+            "Samsung tablet",
+            samsung,
+            accessories,
+            200m,
+            "SKU-SAMSUNG-TABLET",
+            sellerId);
+
+        var applePhone = CreateProductWithOffer(
+            "Apple Phone",
+            "Apple smartphone",
+            apple,
+            phones,
+            150m,
+            "SKU-APPLE-PHONE",
+            sellerId);
+
+        var samsungWithoutOffer = Product.Create(
+            "Samsung No Offer",
+            "Samsung product without an active offer",
+            samsung.Id,
+            accessories.Id);
+
+        samsungWithoutOffer.Activate();
 
         var inactiveProduct = Product.Create(
-            "Inactive product",
-            "Inactive product description",
-            brand.Id,
-            category.Id);
+            "Samsung Inactive",
+            "Inactive Samsung product",
+            samsung.Id,
+            phones.Id);
+
         inactiveProduct.Deactivate();
 
-        dbContext.Brands.Add(brand);
-        dbContext.Categories.Add(category);
+        dbContext.Brands.AddRange(samsung, apple);
+        dbContext.Categories.AddRange(phones, accessories);
 
         dbContext.Products.AddRange(
-            firstActiveProduct,
-            secondActiveProduct,
+            samsungPhone.Product,
+            samsungTablet.Product,
+            applePhone.Product,
+            samsungWithoutOffer,
             inactiveProduct);
+
+        dbContext.ProductVariants.AddRange(
+            samsungPhone.Variant,
+            samsungTablet.Variant,
+            applePhone.Variant);
+
+        dbContext.SellerOffers.AddRange(
+            samsungPhone.Offer,
+            samsungTablet.Offer,
+            applePhone.Offer);
 
         await dbContext.SaveChangesAsync();
 
         var repository = new ProductRepository(dbContext);
 
-        var totalCount = await repository.CountActiveAsync(
-            CancellationToken.None);
+        var defaultFilter = new ProductListFilter(
+            CategoryId: null,
+            BrandId: null,
+            MinPrice: null,
+            MaxPrice: null,
+            Search: null,
+            SortOrder: ProductSortOrder.Newest);
 
-        var firstPage = await repository.GetActivePageAsync(
+        var allProducts = await repository.GetActivePageAsync(
             1,
-            1,
-            CancellationToken.None);
+            10,
+            defaultFilter);
 
-        var secondPage = await repository.GetActivePageAsync(
-            2,
-            1,
-            CancellationToken.None);
-
-        var beyondLastPage = await repository.GetActivePageAsync(
-            3,
-            1,
-            CancellationToken.None);
-
-        var pagedProducts = firstPage.Concat(secondPage).ToList();
-        var pagedProductIds = pagedProducts
-            .Select(product => product.Id)
-            .ToList();
+        var totalCount = await repository.CountActiveAsync(defaultFilter);
 
         Assert.Multiple(() =>
         {
-            Assert.That(totalCount, Is.EqualTo(2));
-
-            Assert.That(firstPage, Has.Count.EqualTo(1));
-            Assert.That(secondPage, Has.Count.EqualTo(1));
-            Assert.That(beyondLastPage, Is.Empty);
+            Assert.That(totalCount, Is.EqualTo(4));
+            Assert.That(allProducts, Has.Count.EqualTo(4));
 
             Assert.That(
-                pagedProductIds,
+                allProducts.Select(product => product.Name),
                 Is.EquivalentTo(new[]
                 {
-                    firstActiveProduct.Id,
-                    secondActiveProduct.Id
+                    "Samsung Phone",
+                    "Samsung Tablet",
+                    "Apple Phone",
+                    "Samsung No Offer"
                 }));
 
             Assert.That(
-                pagedProductIds.Distinct().Count(),
-                Is.EqualTo(2));
+                allProducts.Any(product => product.Name == "Samsung Inactive"),
+                Is.False);
 
             Assert.That(
-                pagedProducts.All(product =>
-                    product.Status == ProductStatus.Active),
-                Is.True);
-
-            Assert.That(firstPage[0].Brand, Is.Not.Null);
-            Assert.That(firstPage[0].Category, Is.Not.Null);
-            Assert.That(secondPage[0].Brand, Is.Not.Null);
-            Assert.That(secondPage[0].Category, Is.Not.Null);
+                allProducts.Single(product =>
+                    product.Name == "Samsung No Offer").Price,
+                Is.Null);
         });
+
+        var brandFilter = defaultFilter with
+        {
+            BrandId = samsung.Id
+        };
+
+        var samsungProducts = await repository.GetActivePageAsync(
+            1,
+            10,
+            brandFilter);
+
+        Assert.That(
+            await repository.CountActiveAsync(brandFilter),
+            Is.EqualTo(3));
+
+        Assert.That(samsungProducts, Has.Count.EqualTo(3));
+        Assert.That(
+            samsungProducts.All(product => product.BrandId == samsung.Id),
+            Is.True);
+
+        var categoryFilter = defaultFilter with
+        {
+            CategoryId = phones.Id
+        };
+
+        var phoneProducts = await repository.GetActivePageAsync(
+            1,
+            10,
+            categoryFilter);
+
+        Assert.That(
+            await repository.CountActiveAsync(categoryFilter),
+            Is.EqualTo(2));
+
+        Assert.That(phoneProducts, Has.Count.EqualTo(2));
+        Assert.That(
+            phoneProducts.All(product => product.CategoryId == phones.Id),
+            Is.True);
+
+        var searchFilter = defaultFilter with
+        {
+            Search = "sAmSuNg"
+        };
+
+        var searchedProducts = await repository.GetActivePageAsync(
+            1,
+            10,
+            searchFilter);
+
+        Assert.That(
+            await repository.CountActiveAsync(searchFilter),
+            Is.EqualTo(3));
+
+        Assert.That(
+            searchedProducts.Select(product => product.Name),
+            Is.EquivalentTo(new[]
+            {
+                "Samsung Phone",
+                "Samsung Tablet",
+                "Samsung No Offer"
+            }));
+
+        var priceFilter = defaultFilter with
+        {
+            MinPrice = 120m,
+            MaxPrice = 180m
+        };
+
+        var priceFilteredProducts = await repository.GetActivePageAsync(
+            1,
+            10,
+            priceFilter);
+
+        Assert.That(
+            await repository.CountActiveAsync(priceFilter),
+            Is.EqualTo(1));
+
+        Assert.That(priceFilteredProducts, Has.Count.EqualTo(1));
+        Assert.That(priceFilteredProducts[0].Name, Is.EqualTo("Apple Phone"));
+        Assert.That(priceFilteredProducts[0].Price, Is.EqualTo(150m));
+
+        var ascendingFilter = defaultFilter with
+        {
+            SortOrder = ProductSortOrder.PriceAscending
+        };
+
+        var ascendingProducts = await repository.GetActivePageAsync(
+            1,
+            10,
+            ascendingFilter);
+
+        Assert.That(
+            ascendingProducts.Select(product => product.Price),
+            Is.EqualTo(new decimal?[]
+            {
+                100m,
+                150m,
+                200m,
+                null
+            }));
+
+        var descendingFilter = defaultFilter with
+        {
+            SortOrder = ProductSortOrder.PriceDescending
+        };
+
+        var descendingProducts = await repository.GetActivePageAsync(
+            1,
+            10,
+            descendingFilter);
+
+        Assert.That(
+            descendingProducts.Select(product => product.Price),
+            Is.EqualTo(new decimal?[]
+            {
+                200m,
+                150m,
+                100m,
+                null
+            }));
     }
+
+    private static ProductOfferGraph CreateProductWithOffer(
+        string name,
+        string description,
+        Brand brand,
+        Category category,
+        decimal price,
+        string sku,
+        Guid sellerId)
+    {
+        var product = Product.Create(
+            name,
+            description,
+            brand.Id,
+            category.Id);
+
+        product.Activate();
+
+        var variant = ProductVariant.Create(
+            product,
+            sku,
+            $"{name} variant");
+
+        variant.Activate(product);
+
+        var offer = SellerOffer.Create(
+            sellerId,
+            variant.Id,
+            price,
+            stock: 10);
+
+        offer.Activate();
+
+        return new ProductOfferGraph(product, variant, offer);
+    }
+
+    private sealed record ProductOfferGraph(
+        Product Product,
+        ProductVariant Variant,
+        SellerOffer Offer);
 }
