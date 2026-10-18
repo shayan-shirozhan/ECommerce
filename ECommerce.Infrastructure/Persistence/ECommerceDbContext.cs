@@ -32,6 +32,10 @@ public class ECommerceDbContext(DbContextOptions<ECommerceDbContext> options)
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+        builder.Entity<ApplicationUser>()
+            .HasIndex(user => user.NormalizedEmail)
+            .IsUnique()
+            .HasDatabaseName("EmailIndex");
         builder.ApplyConfigurationsFromAssembly(typeof(ECommerceDbContext).Assembly);
     }
 

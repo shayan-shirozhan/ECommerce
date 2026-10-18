@@ -13,6 +13,7 @@ public static class DatabaseSeeder
     {
         await EnsureRoleAsync(roleManager, ApplicationRoles.Admin);
         await EnsureRoleAsync(roleManager, ApplicationRoles.Seller);
+        await EnsureRoleAsync(roleManager, ApplicationRoles.Customer);
     }
 
     public static async Task SeedDevelopmentDataAsync(

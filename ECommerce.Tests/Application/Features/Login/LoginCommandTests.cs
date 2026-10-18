@@ -152,6 +152,19 @@ public sealed class LoginCommandTests
 
             return Task.FromResult(User);
         }
+
+        public Task<CreatedIdentityUser> CreateUserAsync(
+            string email,
+            string password,
+            string firstName,
+            string lastName,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("User creation is not used by login tests.");
+
+        public Task DeleteUserAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 
     private sealed class FakeAccessTokenService : IAccessTokenService

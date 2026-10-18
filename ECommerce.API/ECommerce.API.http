@@ -54,6 +54,20 @@ Content-Type: application/json
 
 ###
 
+### Register Customer
+
+POST {{ECommerce_API_HostAddress}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "customer@test.com",
+  "password": "Password123!",
+  "firstName": "Test",
+  "lastName": "Customer"
+}
+
+###
+
 ### Get Product
 
 GET {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}
