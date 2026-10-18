@@ -18,7 +18,11 @@ public sealed class CatalogLifecycleCommandHandlerTests
         var product = CreateProduct();
         var repository = new FakeProductRepository { ProductForUpdate = product };
         var unitOfWork = new FakeUnitOfWork();
-        var handler = new ActivateProductCommandHandler(repository, unitOfWork);
+        var handler = new ActivateProductCommandHandler(
+            repository,
+            new FakeBrandRepository(),
+            new FakeCategoryRepository(),
+            unitOfWork);
 
         await handler.Handle(new ActivateProductCommand(product.Id), CancellationToken.None);
 
@@ -33,10 +37,37 @@ public sealed class CatalogLifecycleCommandHandlerTests
     public void ActivateProduct_should_throw_not_found_when_product_does_not_exist()
     {
         var unitOfWork = new FakeUnitOfWork();
-        var handler = new ActivateProductCommandHandler(new FakeProductRepository(), unitOfWork);
+        var handler = new ActivateProductCommandHandler(
+            new FakeProductRepository(),
+            new FakeBrandRepository(),
+            new FakeCategoryRepository(),
+            unitOfWork);
 
         Assert.ThrowsAsync<NotFoundException>(async () =>
             await handler.Handle(new ActivateProductCommand(Guid.NewGuid()), CancellationToken.None));
+        Assert.That(unitOfWork.SaveChangesCalled, Is.False);
+    }
+
+    [Test]
+    public void ActivateProduct_should_reject_product_when_brand_is_deleted()
+    {
+        var product = CreateProduct();
+        var repository = new FakeProductRepository
+        {
+            ProductForUpdate = product
+        };
+        var unitOfWork = new FakeUnitOfWork();
+
+        var handler = new ActivateProductCommandHandler(
+            repository,
+            new FakeBrandRepository(exists: false),
+            new FakeCategoryRepository(),
+            unitOfWork);
+
+        Assert.ThrowsAsync<ECommerce.Application.Exceptions.BusinessRuleException>(async () => await handler.Handle(
+            new ActivateProductCommand(product.Id),
+            CancellationToken.None));
+
         Assert.That(unitOfWork.SaveChangesCalled, Is.False);
     }
 
@@ -190,5 +221,74 @@ public sealed class CatalogLifecycleCommandHandlerTests
             SaveChangesCalled = true;
             return Task.FromResult(1);
         }
+    }
+
+    private sealed class FakeBrandRepository(bool exists = true)
+        : IBrandRepository
+    {
+        public Task<bool> ExistsAsync(
+            Guid brandId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(exists);
+
+        public Task AddAsync(
+            Brand brand,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<Brand?> GetByIdAsync(
+            Guid brandId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Brand?>(null);
+
+        public Task<Brand?> GetByIdForUpdateAsync(
+            Guid brandId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Brand?>(null);
+
+        public Task<bool> HasActiveProductsAsync(
+            Guid brandId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+    }
+
+    private sealed class FakeCategoryRepository(bool exists = true)
+        : ICategoryRepository
+    {
+        public Task<bool> ExistsAsync(
+            Guid categoryId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(exists);
+
+        public Task AddAsync(
+            Category category,
+            CancellationToken cancellationToken = default) =>
+            Task.CompletedTask;
+
+        public Task<Category?> GetByIdAsync(
+            Guid categoryId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Category?>(null);
+
+        public Task<Category?> GetByIdForUpdateAsync(
+            Guid categoryId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<Category?>(null);
+
+        public Task<bool> HasActiveProductsAsync(
+            Guid categoryId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public Task<bool> HasChildrenAsync(
+            Guid categoryId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
+        public Task<bool> WouldCreateCycleAsync(
+            Guid categoryId,
+            Guid? proposedParentCategoryId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
     }
 }

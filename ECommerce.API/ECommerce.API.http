@@ -209,6 +209,25 @@ Authorization: Bearer {{AdminToken}}
 
 # -------------------------------------------------------------------
 
+###
+
+### Update Brand - Admin
+
+PUT {{ECommerce_API_HostAddress}}/api/brands/{{BrandId}}
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "name": "Samsung Updated"
+}
+
+###
+
+### Delete Brand - Admin
+
+DELETE {{ECommerce_API_HostAddress}}/api/brands/{{BrandId}}
+Authorization: Bearer {{AdminToken}}
+
 ### Create Category
 
 POST {{ECommerce_API_HostAddress}}/api/categories
@@ -226,6 +245,39 @@ Authorization: Bearer {{AdminToken}}
 
 GET {{ECommerce_API_HostAddress}}/api/categories/{{CategoryId}}
 Accept: application/json
+
+###
+
+### Update Category - Admin
+
+PUT {{ECommerce_API_HostAddress}}/api/categories/{{CategoryId}}
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "name": "Smartphones",
+  "parentCategoryId": "{{ParentCategoryId}}"
+}
+
+###
+
+### Update Root Category - Admin
+
+PUT {{ECommerce_API_HostAddress}}/api/categories/{{CategoryId}}
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "name": "Smartphones",
+  "parentCategoryId": null
+}
+
+###
+
+### Delete Category - Admin
+
+DELETE {{ECommerce_API_HostAddress}}/api/categories/{{CategoryId}}
+Authorization: Bearer {{AdminToken}}
 
 # -------------------------------------------------------------------
 
