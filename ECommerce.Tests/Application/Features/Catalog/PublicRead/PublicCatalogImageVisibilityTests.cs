@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Catalog.ProductImages.GetProductImageById;
@@ -251,6 +251,26 @@ public sealed class PublicCatalogImageVisibilityTests
 
     private sealed class FakeProductRepository(Product? product) : IProductRepository
     {
+        public Task<IReadOnlyList<Product>> GetActivePageAsync(
+            int page,
+            int pageSize,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<Product> activeProducts =
+                product is { Status: ProductStatus.Active } activeProduct
+                    ? new[] { activeProduct }
+                    : Array.Empty<Product>();
+
+            return Task.FromResult(activeProducts);
+        }
+
+        public Task<int> CountActiveAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(
+                product?.Status == ProductStatus.Active ? 1 : 0);
+        }
+
         public Task<Product?> GetByIdWithDetailsAsync(Guid productId, CancellationToken cancellationToken = default) =>
             Task.FromResult(product?.Id == productId ? product : null);
 

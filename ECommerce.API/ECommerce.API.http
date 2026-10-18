@@ -109,6 +109,27 @@ Authorization: Bearer {{AdminToken}}
 
 # -------------------------------------------------------------------
 
+###
+
+### Get Active Products - First Page
+
+GET {{ECommerce_API_HostAddress}}/api/products?page=1&pageSize=10
+Accept: application/json
+
+###
+
+### Get Active Products - Second Page
+
+GET {{ECommerce_API_HostAddress}}/api/products?page=2&pageSize=10
+Accept: application/json
+
+###
+
+### Get Active Products - Validation Test
+
+GET {{ECommerce_API_HostAddress}}/api/products?page=0&pageSize=101
+Accept: application/json
+
 ### Get Brand
 
 GET {{ECommerce_API_HostAddress}}/api/brands/{{BrandId}}
