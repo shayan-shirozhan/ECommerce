@@ -1,9 +1,11 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+﻿using ECommerce.API.Contracts.Catalog;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.Products.ActivateProduct;
 using ECommerce.Application.Features.Catalog.Products.CreateProduct;
 using ECommerce.Application.Features.Catalog.Products.DeactivateProduct;
 using ECommerce.Application.Features.Catalog.Products.GetProductById;
 using ECommerce.Application.Features.Catalog.Products.GetProducts;
+using ECommerce.Application.Features.Catalog.Products.UpdateProduct;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -54,6 +56,24 @@ public class ProductsController(ISender sender) : ControllerBase
             cancellationToken);
 
         return Ok(result);
+    }
+
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateProductRequest request,
+        CancellationToken cancellationToken)
+    {
+        await sender.Send(
+            new UpdateProductCommand(
+                id,
+                request.Name,
+                request.Description,
+                request.BrandId,
+                request.CategoryId),
+            cancellationToken);
+
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/activate")]
