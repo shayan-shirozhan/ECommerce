@@ -8,6 +8,7 @@
 
 @SellerToken = YOUR_SELLER_ACCESS_TOKEN
 @AdminToken = YOUR_ADMIN_ACCESS_TOKEN
+@CustomerToken = YOUR_CUSTOMER_ACCESS_TOKEN
 
 @ProductId = YOUR_PRODUCT_ID
 @BrandId = YOUR_BRAND_ID
@@ -19,6 +20,7 @@
 
 @SellerOfferId = YOUR_SELLER_OFFER_ID
 @SellerRequestId = YOUR_SELLER_REQUEST_ID
+@OrderId = YOUR_ORDER_ID
 
 # Get the current RowVersion from GET /api/seller-offers/{id}
 
@@ -499,3 +501,21 @@ Authorization: Bearer {{AdminToken}}
 
 POST {{ECommerce_API_HostAddress}}/api/seller-requests/{{SellerRequestId}}/reject
 Authorization: Bearer {{AdminToken}}
+
+
+# -------------------------------------------------------------------
+
+# Payments
+
+# -------------------------------------------------------------------
+
+### Initiate Payment (Customer)
+
+# Replace OrderId with an order owned by the authenticated customer.
+# The order must be in Pending status and have a positive total amount.
+
+POST {{ECommerce_API_HostAddress}}/api/payments/orders/{{OrderId}}/initiate
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###

@@ -150,4 +150,12 @@ public class Order : AuditableEntity
         ArgumentNullException.ThrowIfNull(payment);
         _payments.Add(payment);
     }
+
+    public Payment InitiatePayment()
+    {
+        var payment = Payment.Create(Id, TotalAmount, PaymentMethod.Mock);
+        MoveToAwaitingPayment();
+        AddPayment(payment);
+        return payment;
+    }
 }
