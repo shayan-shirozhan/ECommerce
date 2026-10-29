@@ -8,4 +8,5 @@ public interface IOrderRepository
     Task<string?> GetSellerDisplayNameAsync(Guid sellerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Order>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Order?> GetByIdForUserAsync(Guid orderId, Guid userId, CancellationToken cancellationToken = default);
+    Task<Order?> GetByIdForUserForUpdateAsync(Guid orderId, Guid userId, CancellationToken cancellationToken = default);
 }
