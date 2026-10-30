@@ -10,6 +10,7 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
     public void Configure(EntityTypeBuilder<Order> builder)
     {
         builder.HasKey(x => x.Id);
+        builder.Property(order => order.RowVersion).IsRowVersion();
         builder.Property(x => x.Status).IsRequired();
         builder.Property(x => x.TotalAmount).HasPrecision(18, 2).IsRequired();
         builder.Property(x => x.ShippingRecipientName).IsRequired().HasMaxLength(150);

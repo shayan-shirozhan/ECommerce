@@ -74,4 +74,17 @@ internal sealed class OrderRepository(
             .Include(order => order.Payments)
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    public Task<Order?> GetByPaymentIdForUserForUpdateAsync(
+        Guid paymentId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .Where(order =>
+                order.UserId == userId &&
+                order.Payments.Any(payment => payment.Id == paymentId))
+            .Include(order => order.Payments)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 }
