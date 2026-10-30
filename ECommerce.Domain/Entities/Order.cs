@@ -24,6 +24,7 @@ public class Order : AuditableEntity
 
     //prop's
     public Guid UserId { get; private set; }
+    public uint RowVersion { get; private set; }
     public OrderStatus Status { get; private set; }
     public decimal TotalAmount { get; private set; }
     public string ShippingRecipientName { get; private set; } = null!;

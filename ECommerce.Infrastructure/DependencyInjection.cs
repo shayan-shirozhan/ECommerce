@@ -1,7 +1,9 @@
 ﻿using System.Text;
 using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Infrastructure.Identity;
+using ECommerce.Infrastructure.Payments;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Repositories;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -79,6 +81,7 @@ public static class DependencyInjection
         services.AddScoped<IUnitOfWork>(provider => provider.GetRequiredService<ECommerceDbContext>());
         services.AddScoped<ICartRepository, CartRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<IPaymentGateway, MockPaymentGateway>();
 
         return services;
     }
