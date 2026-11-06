@@ -505,6 +505,20 @@ Authorization: Bearer {{AdminToken}}
 
 # -------------------------------------------------------------------
 
+# Seller Orders
+
+# -------------------------------------------------------------------
+
+### Get Seller Orders
+
+GET {{ECommerce_API_HostAddress}}/api/seller-orders
+Accept: application/json
+Authorization: Bearer {{SellerToken}}
+
+###
+
+# -------------------------------------------------------------------
+
 # Payments
 
 # -------------------------------------------------------------------
