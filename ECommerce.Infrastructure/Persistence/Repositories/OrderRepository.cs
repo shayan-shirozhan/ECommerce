@@ -87,4 +87,18 @@ internal sealed class OrderRepository(
             .Include(order => order.Payments)
             .FirstOrDefaultAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Order>> GetBySellerIdAsync(Guid sellerId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Orders
+            .AsNoTracking()
+            .Where(order => order.Groups.Any(
+                group => group.SellerId == sellerId))
+            .Include(order => order.Groups.Where(
+                group => group.SellerId == sellerId))
+            .ThenInclude(group => group.Items)
+            .OrderByDescending(order => order.CreatedAt)
+            .ToListAsync(cancellationToken);
+    }
 }
