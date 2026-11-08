@@ -130,6 +130,48 @@ public class Order : AuditableEntity
         Status = OrderStatus.AwaitingPayment;
     }
 
+    public void MoveSellerGroupToProcessing(Guid sellerId)
+    {
+        if (Status != OrderStatus.Processing && Status != OrderStatus.Confirmed)
+            throw new DomainException("Order cannot move to processing in its current state.");
+
+        var orderGroup = _groups.SingleOrDefault(group => group.SellerId == sellerId);
+
+        if (orderGroup is null) throw new DomainException("Order group for this seller was not found.");
+
+        orderGroup.MoveToProcessing();
+
+        UpdateStatusFromGroups();
+    }
+
+    public void MoveSellerGroupToShipped(Guid sellerId)
+    {
+        if (Status != OrderStatus.Processing)
+            throw new DomainException("Order cannot move to shipped in its current state.");
+
+        var orderGroup = _groups.SingleOrDefault(group => group.SellerId == sellerId);
+
+        if (orderGroup is null) throw new DomainException("Order group for this seller was not found.");
+
+        orderGroup.MoveToShipped();
+
+        UpdateStatusFromGroups();
+    }
+
+    public void MoveSellerGroupToDelivered(Guid sellerId)
+    {
+        if (Status != OrderStatus.Shipped)
+            throw new DomainException("Order cannot move to delivered in its current state.");
+
+        var orderGroup = _groups.SingleOrDefault(group => group.SellerId == sellerId);
+
+        if (orderGroup is null) throw new DomainException("Order group for this seller was not found.");
+
+        orderGroup.MoveToDelivered();
+
+        UpdateStatusFromGroups();
+    }
+
     public void Confirm()
     {
         if (Status != OrderStatus.AwaitingPayment)
@@ -142,6 +184,15 @@ public class Order : AuditableEntity
     {
         if (Status != OrderStatus.Pending && Status != OrderStatus.AwaitingPayment)
             throw new DomainException("Order cannot be cancelled in its current state.");
+
+
+        if (_groups.Any(group => group.Status != OrderGroupStatus.Pending))
+            throw new DomainException("Order cannot be cancelled because one or more groups cannot be cancelled.");
+
+        foreach (var orderGroup in _groups)
+        {
+            orderGroup.Cancel();
+        }
 
         Status = OrderStatus.Cancelled;
     }
@@ -159,4 +210,24 @@ public class Order : AuditableEntity
         AddPayment(payment);
         return payment;
     }
+
+    private void UpdateStatusFromGroups()
+    {
+        if (_groups.Count == 0)
+            throw new DomainException("Order has no groups.");
+
+        if (_groups.All(group => group.Status == OrderGroupStatus.Delivered))
+        {
+            Status = OrderStatus.Delivered;
+        }
+        else if (_groups.All(group => group.Status is OrderGroupStatus.Shipped or OrderGroupStatus.Delivered))
+        {
+            Status = OrderStatus.Shipped;
+        }
+        else
+        {
+            Status = OrderStatus.Processing;
+        }
+    }
+
 }

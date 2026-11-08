@@ -67,7 +67,8 @@ internal sealed class OrderRepository(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<Order?> GetByIdForUserForUpdateAsync(Guid orderId, Guid userId, CancellationToken cancellationToken = default)
+    public Task<Order?> GetByIdForUserForUpdateAsync(Guid orderId, Guid userId,
+        CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
             .Where(order => order.Id == orderId && order.UserId == userId)
@@ -93,10 +94,8 @@ internal sealed class OrderRepository(
     {
         return await dbContext.Orders
             .AsNoTracking()
-            .Where(order => order.Groups.Any(
-                group => group.SellerId == sellerId))
-            .Include(order => order.Groups.Where(
-                group => group.SellerId == sellerId))
+            .Where(order => order.Groups.Any(group => group.SellerId == sellerId))
+            .Include(order => order.Groups.Where(group => group.SellerId == sellerId))
             .ThenInclude(group => group.Items)
             .OrderByDescending(order => order.CreatedAt)
             .ToListAsync(cancellationToken);
@@ -114,6 +113,17 @@ internal sealed class OrderRepository(
                 order.Groups.Any(group => group.SellerId == sellerId))
             .Include(order => order.Groups.Where(group => group.SellerId == sellerId))
             .ThenInclude(group => group.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public Task<Order?> GetByIdForSellerForUpdateAsync(Guid orderId, Guid sellerId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .Where(order =>
+                order.Id == orderId &&
+                order.Groups.Any(group => group.SellerId == sellerId))
+            .Include(order => order.Groups)
             .FirstOrDefaultAsync(cancellationToken);
     }
 }

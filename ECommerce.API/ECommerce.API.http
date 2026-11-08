@@ -517,6 +517,50 @@ Authorization: Bearer {{SellerToken}}
 
 ###
 
+### Get Seller Order Details
+
+GET {{ECommerce_API_HostAddress}}/api/seller-orders/{{OrderId}}
+Accept: application/json
+Authorization: Bearer {{SellerToken}}
+
+###
+
+### Update Seller Order Status - Processing
+
+PATCH {{ECommerce_API_HostAddress}}/api/seller-orders/{{OrderId}}/status
+Content-Type: application/json
+Authorization: Bearer {{SellerToken}}
+
+{
+  "newStatus": 2
+}
+
+###
+
+### Update Seller Order Status - Shipped
+
+PATCH {{ECommerce_API_HostAddress}}/api/seller-orders/{{OrderId}}/status
+Content-Type: application/json
+Authorization: Bearer {{SellerToken}}
+
+{
+  "newStatus": 3
+}
+
+###
+
+### Update Seller Order Status - Delivered
+
+PATCH {{ECommerce_API_HostAddress}}/api/seller-orders/{{OrderId}}/status
+Content-Type: application/json
+Authorization: Bearer {{SellerToken}}
+
+{
+  "newStatus": 4
+}
+
+###
+
 # -------------------------------------------------------------------
 
 # Payments

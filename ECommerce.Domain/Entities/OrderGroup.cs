@@ -1,4 +1,4 @@
-﻿using ECommerce.Domain.Common;
+using ECommerce.Domain.Common;
 using ECommerce.Domain.Enums;
 using ECommerce.Domain.Exceptions;
 
@@ -24,7 +24,7 @@ public class OrderGroup : AuditableEntity
     //prop's
     public Guid OrderId { get; private set; }
     public Guid SellerId { get; private set; }
-    public OrderGroupStatus Status { get; set; }
+    public OrderGroupStatus Status { get; private set; }
     public decimal TotalAmount { get; private set; }
 
     private readonly List<OrderItem> _items = [];
@@ -44,5 +44,37 @@ public class OrderGroup : AuditableEntity
     private void RecalculateTotal()
     {
         TotalAmount = _items.Sum(x => x.TotalAmount);
+    }
+
+    internal void MoveToProcessing()
+    {
+        if (Status != OrderGroupStatus.Pending)
+            throw new DomainException("Order group cannot be moved to processing in its current state.");
+
+        Status = OrderGroupStatus.Processing;
+    }
+
+    internal void MoveToShipped()
+    {
+        if (Status != OrderGroupStatus.Processing)
+            throw new DomainException("Order group cannot be moved to shipped in its current state.");
+
+        Status = OrderGroupStatus.Shipped;
+    }
+
+    internal void MoveToDelivered()
+    {
+        if (Status != OrderGroupStatus.Shipped)
+            throw new DomainException("Order group cannot be moved to delivered in its current state.");
+
+        Status = OrderGroupStatus.Delivered;
+    }
+
+    internal void Cancel()
+    {
+        if (Status != OrderGroupStatus.Pending)
+            throw new DomainException("Order group cannot be cancelled in its current state.");
+
+        Status = OrderGroupStatus.Cancelled;
     }
 }
