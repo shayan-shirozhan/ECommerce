@@ -101,4 +101,19 @@ internal sealed class OrderRepository(
             .OrderByDescending(order => order.CreatedAt)
             .ToListAsync(cancellationToken);
     }
+
+    public Task<Order?> GetByIdForSellerAsync(
+        Guid orderId,
+        Guid sellerId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .AsNoTracking()
+            .Where(order =>
+                order.Id == orderId &&
+                order.Groups.Any(group => group.SellerId == sellerId))
+            .Include(order => order.Groups.Where(group => group.SellerId == sellerId))
+            .ThenInclude(group => group.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
 }
