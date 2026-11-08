@@ -1,4 +1,5 @@
 using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Features.Orders.GetSellerOrderById;
 using ECommerce.Application.Features.Orders.GetSellerOrders;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -22,6 +23,24 @@ public sealed class SellerOrdersController(ISender sender) : ControllerBase
     {
         var response = await sender.Send(
             new GetSellerOrdersQuery(),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
+    [HttpGet("{orderId:guid}")]
+    [ProducesResponseType(
+        typeof(GetSellerOrderByIdResponse),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<GetSellerOrderByIdResponse>> GetSellerOrderById(
+        Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        var response = await sender.Send(
+            new GetSellerOrderByIdQuery(orderId),
             cancellationToken);
 
         return Ok(response);
