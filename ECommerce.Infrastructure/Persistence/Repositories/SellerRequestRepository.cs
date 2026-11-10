@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Persistence;
+using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -22,5 +22,35 @@ internal sealed class SellerRequestRepository(ECommerceDbContext dbContext) : IS
     {
         return await dbContext.SellerRequests.FirstOrDefaultAsync(
             x => x.UserId == userId && x.Status == SellerRequestStatus.Pending, cancellationToken);
+    }
+
+
+    public async Task<IReadOnlyList<SellerRequest>> GetPageAsync(int page, int pageSize,
+        SellerRequestStatus? status = null, CancellationToken cancellationToken = default)
+    {
+        var offset = checked((int)(((long)page - 1L) * pageSize));
+
+        var query = dbContext.SellerRequests
+            .AsNoTracking();
+
+        if (status.HasValue)
+            query = query.Where(request => request.Status == status.Value);
+
+        return await query
+            .OrderByDescending(request => request.Id)
+            .Skip(offset)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<int> CountAsync(SellerRequestStatus? status = null, CancellationToken cancellationToken = default)
+    {
+        var query = dbContext.SellerRequests
+            .AsNoTracking();
+
+        if (status.HasValue)
+            query = query.Where(request => request.Status == status.Value);
+
+        return query.CountAsync(cancellationToken);
     }
 }

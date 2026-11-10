@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Sellers.SellerRequests.ApproveSellerRequest;
@@ -208,6 +208,23 @@ public sealed class SellerRequestHandlerTests
             }
 
             return Task.FromResult<SellerRequest?>(PendingRequest);
+        }
+
+        public Task<IReadOnlyList<SellerRequest>> GetPageAsync(
+            int page,
+            int pageSize,
+            SellerRequestStatus? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<SellerRequest>>(
+                Array.Empty<SellerRequest>());
+        }
+
+        public Task<int> CountAsync(
+            SellerRequestStatus? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(0);
         }
     }
 

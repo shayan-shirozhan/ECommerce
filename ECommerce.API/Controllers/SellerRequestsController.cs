@@ -1,8 +1,10 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Sellers.SellerRequests.ApproveSellerRequest;
 using ECommerce.Application.Features.Sellers.SellerRequests.CreateSellerRequest;
 using ECommerce.Application.Features.Sellers.SellerRequests.GetSellerRequestById;
+using ECommerce.Application.Features.Sellers.SellerRequests.GetSellerRequests;
 using ECommerce.Application.Features.Sellers.SellerRequests.RejectSellerRequest;
+using ECommerce.Domain.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +15,27 @@ namespace ECommerce.API.Controllers;
 [Route("api/seller-requests")]
 public class SellerRequestsController(ISender sender) : ControllerBase
 {
+    [Authorize(Roles = ApplicationRoles.Admin)]
+    [HttpGet]
+    [ProducesResponseType(
+        typeof(GetSellerRequestsResponse),
+        StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<GetSellerRequestsResponse>> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] SellerRequestStatus? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await sender.Send(
+            new GetSellerRequestsQuery(page, pageSize, status),
+            cancellationToken);
+
+        return Ok(response);
+    }
+
     [Authorize]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<SellerRequestDto>> GetById(Guid id, CancellationToken cancellationToken)

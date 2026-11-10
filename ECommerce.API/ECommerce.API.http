@@ -492,6 +492,30 @@ Authorization: Bearer {{SellerToken}}
 
 ###
 
+### Get All Seller Requests
+
+GET {{ECommerce_API_HostAddress}}/api/seller-requests?page=1&pageSize=10
+Accept: application/json
+Authorization: Bearer {{AdminToken}}
+
+###
+
+### Get Pending Seller Requests
+
+GET {{ECommerce_API_HostAddress}}/api/seller-requests?page=1&pageSize=10&status=Pending
+Accept: application/json
+Authorization: Bearer {{AdminToken}}
+
+###
+
+### Get Approved Seller Requests
+
+GET {{ECommerce_API_HostAddress}}/api/seller-requests?page=1&pageSize=10&status=Approved
+Accept: application/json
+Authorization: Bearer {{AdminToken}}
+
+###
+
 ### Get Seller Request - Owner
 
 GET {{ECommerce_API_HostAddress}}/api/seller-requests/{{SellerRequestId}}
