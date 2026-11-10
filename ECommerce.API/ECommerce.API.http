@@ -397,6 +397,24 @@ Authorization: Bearer {{SellerToken}}
 
 ###
 
+
+### Get My Seller Offers
+
+GET {{ECommerce_API_HostAddress}}/api/seller-offers/my?page=1&pageSize=10
+Accept: application/json
+Authorization: Bearer {{SellerToken}}
+
+###
+
+### Get My Seller Offers By Status
+
+GET {{ECommerce_API_HostAddress}}/api/seller-offers/my?page=1&pageSize=10&status=Active
+Accept: application/json
+Authorization: Bearer {{SellerToken}}
+
+###
+
+
 ### Get Seller Offer
 
 GET {{ECommerce_API_HostAddress}}/api/seller-offers/{{SellerOfferId}}

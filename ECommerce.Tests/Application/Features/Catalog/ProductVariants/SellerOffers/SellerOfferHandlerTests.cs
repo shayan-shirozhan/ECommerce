@@ -327,6 +327,27 @@ public sealed class SellerOfferHandlerTests
 
             return Task.FromResult<SellerOffer?>(OfferForUpdate);
         }
+
+
+        public Task<IReadOnlyList<SellerOfferListingItem>> GetBySellerIdPageAsync(
+            Guid sellerId,
+            int page,
+            int pageSize,
+            SellerOfferStatus? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<SellerOfferListingItem>>(
+                Array.Empty<SellerOfferListingItem>());
+        }
+
+        public Task<int> CountBySellerIdAsync(
+            Guid sellerId,
+            SellerOfferStatus? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(0);
+        }
+
     }
 
     private sealed class FakeUnitOfWork : IUnitOfWork
@@ -340,14 +361,14 @@ public sealed class SellerOfferHandlerTests
             return Task.FromResult(1);
         }
     }
-    
+
     private sealed class FakeCurrentUser : ICurrentUser
     {
         public Guid? UserId { get; set; }
         public bool IsAuthenticated => UserId.HasValue;
         public bool IsInRole(string role) => true;
     }
-    
+
     [Test]
     public async Task GetSellerOfferById_should_throw_not_found_when_offer_does_not_exist()
     {
@@ -407,7 +428,7 @@ public sealed class SellerOfferHandlerTests
         var exception = Assert.ThrowsAsync<NotFoundException>(async () => await handler.Handle(
             command,
             CancellationToken.None));
-        
+
         Assert.That(exception!.Message, Does.Contain("Seller offer"));
 
         Assert.That(unitOfWork.SaveChangesCalled, Is.False);
@@ -417,7 +438,7 @@ public sealed class SellerOfferHandlerTests
     public async Task UpdateSellerOfferPrice_should_update_price_and_save_changes()
     {
         var sellerId = Guid.NewGuid();
-        
+
         var sellerOffer = SellerOffer.Create(
             sellerId,
             Guid.NewGuid(),
@@ -452,7 +473,7 @@ public sealed class SellerOfferHandlerTests
             Assert.That(unitOfWork.SaveChangesCalled, Is.True);
         });
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferPrice_should_update_price_for_owner()
     {
@@ -501,7 +522,7 @@ public sealed class SellerOfferHandlerTests
                 Is.True);
         });
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferPrice_should_throw_unauthorized_when_user_is_not_authenticated()
     {
@@ -545,7 +566,7 @@ public sealed class SellerOfferHandlerTests
             Assert.That(sellerOffer.Price, Is.EqualTo(100_000));
         });
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferPrice_should_throw_forbidden_when_user_is_not_owner()
     {
@@ -609,17 +630,17 @@ public sealed class SellerOfferHandlerTests
 
         var exception = Assert.ThrowsAsync<NotFoundException>(async () => await handler.Handle(
             command, CancellationToken.None));
-        
+
         Assert.That(exception!.Message, Does.Contain("Seller offer"));
 
         Assert.That(unitOfWork.SaveChangesCalled, Is.False);
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferStock_should_update_stock_and_save_changes()
     {
         var sellerId = Guid.NewGuid();
-        
+
         var sellerOffer = SellerOffer.Create(
             sellerId,
             Guid.NewGuid(),
@@ -654,7 +675,7 @@ public sealed class SellerOfferHandlerTests
             Assert.That(unitOfWork.SaveChangesCalled, Is.True);
         });
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferStock_should_update_stock_for_owner()
     {
@@ -703,7 +724,7 @@ public sealed class SellerOfferHandlerTests
                 Is.True);
         });
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferStock_should_throw_unauthorized_when_user_is_not_authenticated()
     {
@@ -747,7 +768,7 @@ public sealed class SellerOfferHandlerTests
             Assert.That(sellerOffer.Stock, Is.EqualTo(10));
         });
     }
-    
+
     [Test]
     public async Task UpdateSellerOfferStock_should_throw_forbidden_when_user_is_not_owner()
     {
@@ -794,7 +815,7 @@ public sealed class SellerOfferHandlerTests
             Assert.That(sellerOffer.Stock, Is.EqualTo(10));
         });
     }
-    
+
     [Test]
     public async Task ActivateSellerOffer_should_throw_not_found_when_offer_does_not_exist()
     {
@@ -829,7 +850,7 @@ public sealed class SellerOfferHandlerTests
     public async Task ActivateSellerOffer_should_activate_offer_and_save_changes()
     {
         var sellerId = Guid.NewGuid();
-        
+
         var sellerOffer = SellerOffer.Create(
             sellerId,
             Guid.NewGuid(),
@@ -872,7 +893,7 @@ public sealed class SellerOfferHandlerTests
                 Is.True);
         });
     }
-    
+
     [Test]
     public async Task ActivateSellerOffer_should_activate_offer_for_owner()
     {
@@ -920,7 +941,7 @@ public sealed class SellerOfferHandlerTests
                 Is.True);
         });
     }
-    
+
     [Test]
     public async Task ActivateSellerOffer_should_throw_unauthorized_when_user_is_not_authenticated()
     {
@@ -965,7 +986,7 @@ public sealed class SellerOfferHandlerTests
                 Is.EqualTo(SellerOfferStatus.Inactive));
         });
     }
-    
+
     [Test]
     public async Task ActivateSellerOffer_should_throw_forbidden_when_user_is_not_owner()
     {
@@ -1013,7 +1034,7 @@ public sealed class SellerOfferHandlerTests
                 Is.EqualTo(SellerOfferStatus.Inactive));
         });
     }
-    
+
     [Test]
     public async Task DeactivateSellerOffer_should_throw_not_found_when_offer_does_not_exist()
     {
@@ -1048,7 +1069,7 @@ public sealed class SellerOfferHandlerTests
     public async Task DeactivateSellerOffer_should_deactivate_offer_and_save_changes()
     {
         var sellerId = Guid.NewGuid();
-        
+
         var sellerOffer = SellerOffer.Create(
             sellerId,
             Guid.NewGuid(),
@@ -1093,7 +1114,7 @@ public sealed class SellerOfferHandlerTests
                 Is.True);
         });
     }
-    
+
     [Test]
     public async Task DeactivateSellerOffer_should_deactivate_offer_for_owner()
     {
@@ -1143,7 +1164,7 @@ public sealed class SellerOfferHandlerTests
                 Is.True);
         });
     }
-    
+
     [Test]
     public async Task DeactivateSellerOffer_should_throw_unauthorized_when_user_is_not_authenticated()
     {
@@ -1194,7 +1215,7 @@ public sealed class SellerOfferHandlerTests
                 Is.EqualTo(SellerOfferStatus.Active));
         });
     }
-    
+
     [Test]
     public async Task DeactivateSellerOffer_should_throw_forbidden_when_user_is_not_owner()
     {

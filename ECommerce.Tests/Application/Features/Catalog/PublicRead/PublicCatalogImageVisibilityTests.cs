@@ -247,6 +247,27 @@ public sealed class PublicCatalogImageVisibilityTests
         public Task<SellerOffer?> GetByIdForUpdateAsync(Guid sellerOfferId, uint expectedRowVersion,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(offer?.Id == sellerOfferId ? offer : null);
+
+
+        public Task<IReadOnlyList<SellerOfferListingItem>> GetBySellerIdPageAsync(
+            Guid sellerId,
+            int page,
+            int pageSize,
+            SellerOfferStatus? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<IReadOnlyList<SellerOfferListingItem>>(
+                Array.Empty<SellerOfferListingItem>());
+        }
+
+        public Task<int> CountBySellerIdAsync(
+            Guid sellerId,
+            SellerOfferStatus? status = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(0);
+        }
+
     }
 
     private sealed class FakeProductRepository(Product? product) : IProductRepository
