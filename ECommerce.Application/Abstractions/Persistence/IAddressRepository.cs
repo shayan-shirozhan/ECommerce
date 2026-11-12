@@ -20,4 +20,6 @@ public interface IAddressRepository
     Task AddAsync(
         Address address,
         CancellationToken cancellationToken = default);
+
+    void Remove(Address address);
 }

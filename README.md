@@ -106,4 +106,5 @@ The integration tests use Testcontainers and require Docker to be available.
   HAVING COUNT(*) > 1;
   ```
 - Scalar and the generated OpenAPI document are exposed only in Development by default. Do not enable the Development environment in a public deployment.
-- Cart, order, and payment entities exist in the domain/persistence model, but their end-to-end application use cases and API endpoints are not yet implemented.
+- Customer address management supports creating, listing, updating, deleting, and selecting a default address. Deleting the default address promotes the most recently created remaining address; deleting the final address leaves the account without a saved default address.
+- Cart, order, and payment workflows are implemented end-to-end, including cart item management, order creation and customer/seller order queries, seller order-status updates, mock payment initiation/completion, and customer order cancellation.
