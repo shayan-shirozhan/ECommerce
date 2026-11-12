@@ -2,6 +2,7 @@ using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
+using ECommerce.Application.Features.Orders;
 using ECommerce.Domain.Enums;
 using MediatR;
 
@@ -11,6 +12,7 @@ public sealed class CompleteMockPaymentCommandHandler(
     ICurrentUser currentUser,
     IOrderRepository orderRepository,
     IPaymentGateway paymentGateway,
+    ISellerOfferRepository sellerOfferRepository,
     IUnitOfWork unitOfWork)
     : IRequestHandler<CompleteMockPaymentCommand, CompleteMockPaymentResponse>
 {
@@ -77,6 +79,11 @@ public sealed class CompleteMockPaymentCommandHandler(
         {
             payment.MockFailed();
             order.Cancel();
+
+            await OrderInventoryRestorer.RestoreAsync(
+                order,
+                sellerOfferRepository,
+                cancellationToken);
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);

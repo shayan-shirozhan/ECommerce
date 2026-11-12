@@ -9,6 +9,8 @@ public interface IOrderRepository
     Task<IReadOnlyList<Order>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<Order?> GetByIdForUserAsync(Guid orderId, Guid userId, CancellationToken cancellationToken = default);
     Task<Order?> GetByIdForUserForUpdateAsync(Guid orderId, Guid userId, CancellationToken cancellationToken = default);
+    Task<Order?> GetByIdForUserForCancellationAsync(Guid orderId, Guid userId,
+        CancellationToken cancellationToken = default);
     Task<Order?> GetByPaymentIdForUserForUpdateAsync(Guid paymentId, Guid userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Order>> GetBySellerIdAsync(Guid sellerId, CancellationToken cancellationToken = default);
     Task<Order?> GetByIdForSellerAsync(Guid orderId, Guid sellerId, CancellationToken cancellationToken = default);

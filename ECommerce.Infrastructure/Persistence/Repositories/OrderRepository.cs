@@ -76,16 +76,33 @@ internal sealed class OrderRepository(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<Order?> GetByIdForUserForCancellationAsync(
+        Guid orderId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .AsSplitQuery()
+            .Where(order => order.Id == orderId && order.UserId == userId)
+            .Include(order => order.Payments)
+            .Include(order => order.Groups)
+            .ThenInclude(group => group.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public Task<Order?> GetByPaymentIdForUserForUpdateAsync(
         Guid paymentId,
         Guid userId,
         CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
+            .AsSplitQuery()
             .Where(order =>
                 order.UserId == userId &&
                 order.Payments.Any(payment => payment.Id == paymentId))
             .Include(order => order.Payments)
+            .Include(order => order.Groups)
+            .ThenInclude(group => group.Items)
             .FirstOrDefaultAsync(cancellationToken);
     }
 

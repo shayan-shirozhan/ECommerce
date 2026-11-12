@@ -1,5 +1,6 @@
 using ECommerce.API.Contracts.Orders;
 using ECommerce.Application.Features.Orders.CreateOrderFromCart;
+using ECommerce.Application.Features.Orders.CancelMyOrder;
 using ECommerce.Application.Features.Orders.GetMyOrders;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -50,6 +51,23 @@ public sealed class OrdersController(ISender sender) : ControllerBase
     {
         var result = await sender.Send(
             new GetMyOrdersQuery(),
+            cancellationToken);
+
+        return Ok(result);
+    }
+
+    [HttpPost("my/{orderId:guid}/cancel")]
+    [ProducesResponseType(typeof(CancelMyOrderResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CancelMyOrderResponse>> CancelMyOrder(
+        Guid orderId,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(
+            new CancelMyOrderCommand(orderId),
             cancellationToken);
 
         return Ok(result);

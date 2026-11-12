@@ -31,6 +31,20 @@ internal sealed class SellerOfferRepository(ECommerceDbContext dbContext) : ISel
     }
 
 
+    public async Task<IReadOnlyList<SellerOffer>> GetByIdsForUpdateAsync(
+        IReadOnlyCollection<Guid> sellerOfferIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (sellerOfferIds.Count == 0)
+            return [];
+
+        // Keep the entities tracked so EF Core uses their current RowVersion values
+        // as concurrency tokens when stock is updated.
+        return await dbContext.SellerOffers
+            .Where(offer => sellerOfferIds.Contains(offer.Id))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<SellerOfferListingItem>> GetBySellerIdPageAsync(Guid sellerId, int page,
         int pageSize, SellerOfferStatus? status = null, CancellationToken cancellationToken = default)
     {

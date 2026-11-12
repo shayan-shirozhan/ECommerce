@@ -38,6 +38,8 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             .Include(order => order.Payments)
             .SingleAsync(order => order.Id == seeded.OrderId);
         var persistedPayment = persistedOrder.Payments.Single();
+        var persistedOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.SellerOfferId);
 
         // Assert
         Assert.Multiple(() =>
@@ -53,6 +55,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             Assert.That(persistedPayment.TransactionId, Is.EqualTo("txn-success-001"));
             Assert.That(persistedPayment.GatewayReference, Is.EqualTo("gateway-ref-001"));
             Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(persistedOffer.Stock, Is.EqualTo(7));
 
             Assert.That(gateway.CallCount, Is.EqualTo(1));
             Assert.That(gateway.LastPaymentId, Is.EqualTo(seeded.PaymentId));
@@ -76,8 +79,11 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         await using var verificationContext = CreateDbContext();
         var persistedOrder = await verificationContext.Orders
             .Include(order => order.Payments)
+            .Include(order => order.Groups)
             .SingleAsync(order => order.Id == seeded.OrderId);
         var persistedPayment = persistedOrder.Payments.Single();
+        var persistedOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.SellerOfferId);
 
         // Assert
         Assert.Multiple(() =>
@@ -88,6 +94,8 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             Assert.That(response.GatewayReference, Is.Null);
             Assert.That(persistedPayment.Status, Is.EqualTo(PaymentStatus.Failed));
             Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(persistedOrder.Groups.Single().Status, Is.EqualTo(OrderGroupStatus.Cancelled));
+            Assert.That(persistedOffer.Stock, Is.EqualTo(8));
             Assert.That(gateway.CallCount, Is.EqualTo(1));
         });
     }
@@ -248,6 +256,40 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         });
     }
 
+    [Test]
+    public async Task Handle_should_restore_stock_only_once_when_payment_failures_are_concurrent()
+    {
+        // Arrange: both requests load the same pending order before either gateway call can finish.
+        var userId = Guid.NewGuid();
+        var seeded = await SeedPaymentAsync(userId);
+        var gateway = new CoordinatedPaymentGateway(expectedCallCount: 2, isSuccessful: false);
+        using var provider = CreateProvider(userId, gateway);
+
+        // Act
+        var outcomes = await Task.WhenAll(
+            CaptureFailureAsync(provider, seeded.PaymentId),
+            CaptureFailureAsync(provider, seeded.PaymentId));
+
+        // Assert: only one request can cancel the order and restore the reserved stock.
+        Assert.That(outcomes.Count(exception => exception is null), Is.EqualTo(1));
+        Assert.That(outcomes.Count(exception => exception is ConcurrencyConflictException), Is.EqualTo(1));
+        Assert.That(gateway.CallCount, Is.EqualTo(2));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(order => order.Payments)
+            .SingleAsync(order => order.Id == seeded.OrderId);
+        var persistedOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.SellerOfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(persistedOffer.Stock, Is.EqualTo(8));
+        });
+    }
+
     private async Task<SeededPayment> SeedPaymentAsync(
         Guid userId,
         bool markAsSuccessful = false,
@@ -256,7 +298,42 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         var sellerId = Guid.NewGuid();
         var suffix = Guid.NewGuid().ToString("N");
 
-        var order = CreateOrderWithItem(userId, sellerId);
+        var brand = Brand.Create($"Payment Brand {suffix}");
+        var category = Category.Create($"Payment Category {suffix}");
+        var product = Product.Create(
+            $"Payment Product {suffix}",
+            "Product used by payment tests.",
+            brand.Id,
+            category.Id);
+        product.Activate();
+
+        var variant = ProductVariant.Create(product, $"PAYMENT-{suffix}", "Default");
+        variant.Activate(product);
+
+        // The checkout flow has already reserved one unit from the original stock of 8.
+        var offer = SellerOffer.Create(sellerId, variant.Id, 200m, stock: 7);
+        offer.Activate();
+
+        var order = Order.Create(
+            userId,
+            "Test Buyer",
+            "09120000000",
+            "Tehran",
+            "Tehran",
+            "1234567890",
+            "Test Street");
+        order.AddItem(
+            sellerId,
+            product.Id,
+            variant.Id,
+            offer.Id,
+            product.Name,
+            variant.Name ?? "Default",
+            "Test Seller",
+            200m,
+            1,
+            0m);
+
         var payment = order.InitiatePayment();
 
         if (markAsSuccessful)
@@ -274,38 +351,11 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             context.Users.AddRange(
                 CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
                 CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
-
-            context.Orders.Add(order);
+            context.AddRange(brand, category, product, variant, offer, order);
             await context.SaveChangesAsync();
         }
 
-        return new SeededPayment(order.Id, payment.Id);
-    }
-
-    private static Order CreateOrderWithItem(Guid userId, Guid sellerId)
-    {
-        var order = Order.Create(
-            userId,
-            "Test Buyer",
-            "09120000000",
-            "Tehran",
-            "Tehran",
-            "1234567890",
-            "Test Street");
-
-        order.AddItem(
-            sellerId,
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            "Test Product",
-            "Default",
-            "Test Seller",
-            200m,
-            1,
-            0m);
-
-        return order;
+        return new SeededPayment(order.Id, payment.Id, offer.Id);
     }
 
     private static ApplicationUser CreateUser(
@@ -374,7 +424,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         }
     }
 
-    private sealed record SeededPayment(Guid OrderId, Guid PaymentId);
+    private sealed record SeededPayment(Guid OrderId, Guid PaymentId, Guid SellerOfferId);
 
     private sealed class TestCurrentUser(Guid? userId) : ICurrentUser
     {
@@ -404,7 +454,9 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         }
     }
 
-    private sealed class CoordinatedPaymentGateway(int expectedCallCount) : IPaymentGateway
+    private sealed class CoordinatedPaymentGateway(
+        int expectedCallCount,
+        bool isSuccessful = true) : IPaymentGateway
     {
         private readonly TaskCompletionSource _allCallsReached =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -425,12 +477,12 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
 
             await _allCallsReached.Task.WaitAsync(cancellationToken);
 
-            // Different transaction IDs make the test isolate the Order xmin conflict,
+            // Different transaction IDs make the success test isolate the Order xmin conflict,
             // rather than accidentally relying on the Payment.TransactionId unique index.
             return new PaymentGatewayResult(
-                true,
-                $"concurrent-txn-{invocation}",
-                $"concurrent-ref-{invocation}");
+                isSuccessful,
+                isSuccessful ? $"concurrent-txn-{invocation}" : null,
+                isSuccessful ? $"concurrent-ref-{invocation}" : null);
         }
     }
 }

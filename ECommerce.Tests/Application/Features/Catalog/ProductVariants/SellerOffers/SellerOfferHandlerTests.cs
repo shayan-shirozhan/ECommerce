@@ -314,6 +314,16 @@ public sealed class SellerOfferHandlerTests
             return Task.FromResult<SellerOffer?>(Offer);
         }
 
+        public Task<IReadOnlyList<SellerOffer>> GetByIdsForUpdateAsync(
+            IReadOnlyCollection<Guid> sellerOfferIds,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<SellerOffer> offers = OfferForUpdate is { } offer && sellerOfferIds.Contains(offer.Id)
+                ? [offer]
+                : [];
+            return Task.FromResult(offers);
+        }
+
         public Task<SellerOffer?> GetByIdForUpdateAsync(
             Guid sellerOfferId,
             uint expectedRowVersion,
@@ -359,6 +369,13 @@ public sealed class SellerOfferHandlerTests
         {
             SaveChangesCalled = true;
             return Task.FromResult(1);
+        }
+
+        public Task ExecuteInTransactionAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default)
+        {
+            return operation(cancellationToken);
         }
     }
 

@@ -681,6 +681,18 @@ Authorization: Bearer {{SellerToken}}
 
 # -------------------------------------------------------------------
 
+# Customer Orders
+
+# -------------------------------------------------------------------
+
+### Cancel My Order
+
+POST {{ECommerce_API_HostAddress}}/api/orders/my/{{OrderId}}/cancel
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
 # Payments
 
 # -------------------------------------------------------------------

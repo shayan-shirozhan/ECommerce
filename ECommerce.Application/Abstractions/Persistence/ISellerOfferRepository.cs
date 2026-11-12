@@ -10,6 +10,8 @@ public interface ISellerOfferRepository
 
     Task<SellerOffer?> GetByIdForUpdateAsync(Guid sellerOfferId, uint expectedRowVersion,
         CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SellerOffer>> GetByIdsForUpdateAsync(
+        IReadOnlyCollection<Guid> sellerOfferIds, CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<SellerOfferListingItem>> GetBySellerIdPageAsync(Guid sellerId, int page, int pageSize,
         SellerOfferStatus? status = null, CancellationToken cancellationToken = default);
