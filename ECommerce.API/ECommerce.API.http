@@ -460,6 +460,15 @@ Authorization: Bearer {{AdminToken}}
 GET {{ECommerce_API_HostAddress}}/api/product-images/{{ProductImageId}}
 Accept: application/json
 
+###
+
+### Delete Product Image (Admin)
+
+DELETE {{ECommerce_API_HostAddress}}/api/product-images/{{ProductImageId}}
+Authorization: Bearer {{AdminToken}}
+
+###
+
 # -------------------------------------------------------------------
 
 # Seller Offers
