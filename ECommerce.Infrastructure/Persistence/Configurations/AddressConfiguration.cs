@@ -1,4 +1,4 @@
-﻿using ECommerce.Domain.Entities;
+using ECommerce.Domain.Entities;
 using ECommerce.Infrastructure.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -25,5 +25,9 @@ public class AddressConfiguration : IEntityTypeConfiguration<Address>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasIndex(x => x.UserId);
+        builder.HasIndex(x => x.UserId, "IX_Addresses_UserId_Default")
+            .IsUnique()
+            .HasFilter("\"IsDefault\" = TRUE")
+            .HasDatabaseName("IX_Addresses_UserId_Default");
     }
 }

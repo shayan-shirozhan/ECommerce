@@ -67,6 +67,16 @@ public class Address : AuditableEntity
             isDefault);
     }
 
+    public void SetAsDefault()
+    {
+        IsDefault = true;
+    }
+
+    public void UnsetAsDefault()
+    {
+        IsDefault = false;
+    }
+
     private static string RequireValue(string value, string propertyName)
     {
         if (string.IsNullOrWhiteSpace(value))

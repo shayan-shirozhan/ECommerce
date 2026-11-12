@@ -32,6 +32,40 @@
 
 # -------------------------------------------------------------------
 
+### Create Address - First Address Becomes Default
+
+POST {{ECommerce_API_HostAddress}}/api/addresses
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "title": "Home",
+  "recipientName": "Test Customer",
+  "phoneNumber": "09120000000",
+  "province": "Tehran",
+  "city": "Tehran",
+  "postalCode": "1234567890",
+  "addressLine": "Test Street 1",
+  "isDefault": false
+}
+
+### Create Address - Set As Default
+
+POST {{ECommerce_API_HostAddress}}/api/addresses
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "title": "Office",
+  "recipientName": "Test Customer",
+  "phoneNumber": "09120000000",
+  "province": "Tehran",
+  "city": "Tehran",
+  "postalCode": "1234567890",
+  "addressLine": "Test Street 2",
+  "isDefault": true
+}
+
 ### Get current user's addresses
 
 GET {{ECommerce_API_HostAddress}}/api/addresses/my

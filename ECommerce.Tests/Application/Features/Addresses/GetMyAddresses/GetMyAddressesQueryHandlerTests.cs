@@ -74,20 +74,20 @@ public sealed class GetMyAddressesQueryHandlerTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Handle_should_return_default_addresses_first_then_newest_first()
+    public async Task Handle_should_return_default_address_first_then_non_default_addresses_newest_first()
     {
         // Arrange
         var currentUserId = Guid.NewGuid();
         var otherUserId = Guid.NewGuid();
         var suffix = Guid.NewGuid().ToString("N");
 
-        var olderDefaultAddress = CreateAddress(currentUserId, "Older default", isDefault: true);
-        var newerDefaultAddress = CreateAddress(currentUserId, "Newer default", isDefault: true);
+        var olderNonDefaultAddress = CreateAddress(currentUserId, "Older non-default");
+        var defaultAddress = CreateAddress(currentUserId, "Default", isDefault: true);
         var newestNonDefaultAddress = CreateAddress(currentUserId, "Newest non-default");
         var otherUsersAddress = CreateAddress(otherUserId, "Other user's default", isDefault: true);
 
         var olderCreatedAt = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
-        var newerCreatedAt = new DateTime(2026, 1, 2, 10, 0, 0, DateTimeKind.Utc);
+        var defaultCreatedAt = new DateTime(2026, 1, 2, 10, 0, 0, DateTimeKind.Utc);
         var newestCreatedAt = new DateTime(2026, 1, 3, 10, 0, 0, DateTimeKind.Utc);
 
         await using (var context = CreateDbContext())
@@ -96,17 +96,17 @@ public sealed class GetMyAddressesQueryHandlerTests : PostgresTestBase
                 CreateUser(currentUserId, $"address-owner-{suffix}"),
                 CreateUser(otherUserId, $"other-address-owner-{suffix}"));
             context.Addresses.AddRange(
-                olderDefaultAddress,
-                newerDefaultAddress,
+                olderNonDefaultAddress,
+                defaultAddress,
                 newestNonDefaultAddress,
                 otherUsersAddress);
 
-            context.Entry(olderDefaultAddress)
+            context.Entry(olderNonDefaultAddress)
                 .Property(address => address.CreatedAt)
                 .CurrentValue = olderCreatedAt;
-            context.Entry(newerDefaultAddress)
+            context.Entry(defaultAddress)
                 .Property(address => address.CreatedAt)
-                .CurrentValue = newerCreatedAt;
+                .CurrentValue = defaultCreatedAt;
             context.Entry(newestNonDefaultAddress)
                 .Property(address => address.CreatedAt)
                 .CurrentValue = newestCreatedAt;
@@ -127,16 +127,17 @@ public sealed class GetMyAddressesQueryHandlerTests : PostgresTestBase
             response.Addresses.Select(address => address.Id),
             Is.EqualTo(new[]
             {
-                newerDefaultAddress.Id,
-                olderDefaultAddress.Id,
-                newestNonDefaultAddress.Id
+                defaultAddress.Id,
+                newestNonDefaultAddress.Id,
+                olderNonDefaultAddress.Id
             }));
 
         Assert.That(response.Addresses[0].IsDefault, Is.True);
-        Assert.That(response.Addresses[1].IsDefault, Is.True);
+        Assert.That(response.Addresses[1].IsDefault, Is.False);
         Assert.That(response.Addresses[2].IsDefault, Is.False);
-        Assert.That(response.Addresses[0].CreatedAt, Is.EqualTo(newerCreatedAt));
-        Assert.That(response.Addresses[2].CreatedAt, Is.EqualTo(newestCreatedAt));
+        Assert.That(response.Addresses[0].CreatedAt, Is.EqualTo(defaultCreatedAt));
+        Assert.That(response.Addresses[1].CreatedAt, Is.EqualTo(newestCreatedAt));
+        Assert.That(response.Addresses[2].CreatedAt, Is.EqualTo(olderCreatedAt));
     }
 
     private static Address CreateAddress(
