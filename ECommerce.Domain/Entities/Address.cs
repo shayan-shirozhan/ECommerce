@@ -77,6 +77,34 @@ public class Address : AuditableEntity
         IsDefault = false;
     }
 
+    public void UpdateDetails(
+        string title,
+        string recipientName,
+        string phoneNumber,
+        string province,
+        string city,
+        string postalCode,
+        string addressLine)
+    {
+        // Validate and normalize every value before mutating the entity so a failed
+        // update cannot leave the aggregate partially changed in memory.
+        var normalizedTitle = RequireValue(title, nameof(title));
+        var normalizedRecipientName = RequireValue(recipientName, nameof(recipientName));
+        var normalizedPhoneNumber = RequireValue(phoneNumber, nameof(phoneNumber));
+        var normalizedProvince = RequireValue(province, nameof(province));
+        var normalizedCity = RequireValue(city, nameof(city));
+        var normalizedPostalCode = RequireValue(postalCode, nameof(postalCode));
+        var normalizedAddressLine = RequireValue(addressLine, nameof(addressLine));
+
+        Title = normalizedTitle;
+        RecipientName = normalizedRecipientName;
+        PhoneNumber = normalizedPhoneNumber;
+        Province = normalizedProvince;
+        City = normalizedCity;
+        PostalCode = normalizedPostalCode;
+        AddressLine = normalizedAddressLine;
+    }
+
     private static string RequireValue(string value, string propertyName)
     {
         if (string.IsNullOrWhiteSpace(value))

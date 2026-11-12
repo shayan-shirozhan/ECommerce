@@ -86,6 +86,50 @@ public sealed class AddressTests
         Assert.That(address.IsDefault, Is.False);
     }
 
+    [Test]
+    public void UpdateDetails_should_trim_and_update_address_fields_without_changing_default_status()
+    {
+        var address = CreateAddress(isDefault: true);
+
+        address.UpdateDetails(
+            "  Office  ",
+            "  Updated Recipient  ",
+            "  09121111111  ",
+            "  Alborz  ",
+            "  Karaj  ",
+            "  9876543210  ",
+            "  Updated Street  ");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(address.Title, Is.EqualTo("Office"));
+            Assert.That(address.RecipientName, Is.EqualTo("Updated Recipient"));
+            Assert.That(address.PhoneNumber, Is.EqualTo("09121111111"));
+            Assert.That(address.Province, Is.EqualTo("Alborz"));
+            Assert.That(address.City, Is.EqualTo("Karaj"));
+            Assert.That(address.PostalCode, Is.EqualTo("9876543210"));
+            Assert.That(address.AddressLine, Is.EqualTo("Updated Street"));
+            Assert.That(address.IsDefault, Is.True);
+        });
+    }
+
+    [Test]
+    public void UpdateDetails_should_reject_blank_required_values()
+    {
+        var address = CreateAddress();
+
+        Assert.Throws<DomainException>(() => address.UpdateDetails(
+            "Office",
+            "Updated Recipient",
+            "09121111111",
+            "Tehran",
+            "Tehran",
+            "9876543210",
+            " "));
+
+        Assert.That(address.Title, Is.EqualTo("Home"));
+    }
+
     private static Address CreateAddress(bool isDefault = false)
     {
         return Address.Create(

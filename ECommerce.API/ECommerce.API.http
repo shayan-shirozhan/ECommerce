@@ -21,6 +21,7 @@
 @SellerOfferId = YOUR_SELLER_OFFER_ID
 @SellerRequestId = YOUR_SELLER_REQUEST_ID
 @OrderId = YOUR_ORDER_ID
+@AddressId = YOUR_ADDRESS_ID
 
 # Get the current RowVersion from GET /api/seller-offers/{id}
 
@@ -71,6 +72,24 @@ Authorization: Bearer {{CustomerToken}}
 GET {{ECommerce_API_HostAddress}}/api/addresses/my
 Accept: application/json
 Authorization: Bearer {{CustomerToken}}
+
+###
+
+### Update Address
+
+PUT {{ECommerce_API_HostAddress}}/api/addresses/{{AddressId}}
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "title": "Home Updated",
+  "recipientName": "Test Customer",
+  "phoneNumber": "09120000000",
+  "province": "Tehran",
+  "city": "Tehran",
+  "postalCode": "1234567890",
+  "addressLine": "Updated Test Street 1"
+}
 
 ###
 

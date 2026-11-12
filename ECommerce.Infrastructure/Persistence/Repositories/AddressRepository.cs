@@ -28,6 +28,17 @@ internal sealed class AddressRepository(ECommerceDbContext dbContext) : IAddress
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<Address?> GetByIdForUserAsync(
+        Guid addressId,
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Addresses
+            .FirstOrDefaultAsync(
+                address => address.Id == addressId && address.UserId == userId,
+                cancellationToken);
+    }
+
     public async Task AddAsync(
         Address address,
         CancellationToken cancellationToken = default)
