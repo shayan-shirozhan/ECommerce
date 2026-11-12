@@ -65,4 +65,38 @@ public sealed class AddressTests
             "1234567890",
             "Test Street 1"));
     }
+
+    [Test]
+    public void SetAsDefault_should_mark_address_as_default()
+    {
+        var address = CreateAddress();
+
+        address.SetAsDefault();
+
+        Assert.That(address.IsDefault, Is.True);
+    }
+
+    [Test]
+    public void UnsetAsDefault_should_clear_default_flag()
+    {
+        var address = CreateAddress(isDefault: true);
+
+        address.UnsetAsDefault();
+
+        Assert.That(address.IsDefault, Is.False);
+    }
+
+    private static Address CreateAddress(bool isDefault = false)
+    {
+        return Address.Create(
+            Guid.NewGuid(),
+            "Home",
+            "Test Recipient",
+            "09120000000",
+            "Tehran",
+            "Tehran",
+            "1234567890",
+            "Test Street 1",
+            isDefault);
+    }
 }

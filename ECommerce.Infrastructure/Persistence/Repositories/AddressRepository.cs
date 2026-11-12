@@ -18,4 +18,20 @@ internal sealed class AddressRepository(ECommerceDbContext dbContext) : IAddress
             .ThenBy(address => address.Id)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<Address>> GetTrackedByUserIdAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Addresses
+            .Where(address => address.UserId == userId)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task AddAsync(
+        Address address,
+        CancellationToken cancellationToken = default)
+    {
+        await dbContext.Addresses.AddAsync(address, cancellationToken);
+    }
 }
