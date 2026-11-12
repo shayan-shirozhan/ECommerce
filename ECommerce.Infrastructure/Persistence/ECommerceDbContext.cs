@@ -39,6 +39,17 @@ public class ECommerceDbContext(DbContextOptions<ECommerceDbContext> options)
         builder.ApplyConfigurationsFromAssembly(typeof(ECommerceDbContext).Assembly);
     }
 
+    public async Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        await using var transaction = await Database.BeginTransactionAsync(cancellationToken);
+        await operation(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     private void ApplyAuditInformation()
     {
         var now = DateTime.UtcNow;

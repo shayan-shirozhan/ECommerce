@@ -241,5 +241,12 @@ public sealed class UpdateProductCommandHandlerTests
             SaveChangesCalled = true;
             return Task.FromResult(1);
         }
+
+        public Task ExecuteInTransactionAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default)
+        {
+            return operation(cancellationToken);
+        }
     }
 }

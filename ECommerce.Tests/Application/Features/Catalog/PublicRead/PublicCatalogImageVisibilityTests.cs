@@ -244,6 +244,16 @@ public sealed class PublicCatalogImageVisibilityTests
         public Task<SellerOffer?> GetByIdAsync(Guid sellerOfferId, CancellationToken cancellationToken = default) =>
             Task.FromResult(offer?.Id == sellerOfferId ? offer : null);
 
+        public Task<IReadOnlyList<SellerOffer>> GetByIdsForUpdateAsync(
+            IReadOnlyCollection<Guid> sellerOfferIds,
+            CancellationToken cancellationToken = default)
+        {
+            IReadOnlyList<SellerOffer> offers = offer is { } existingOffer && sellerOfferIds.Contains(existingOffer.Id)
+                ? [existingOffer]
+                : [];
+            return Task.FromResult(offers);
+        }
+
         public Task<SellerOffer?> GetByIdForUpdateAsync(Guid sellerOfferId, uint expectedRowVersion,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(offer?.Id == sellerOfferId ? offer : null);

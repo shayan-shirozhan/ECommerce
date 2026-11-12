@@ -221,6 +221,13 @@ public sealed class CatalogLifecycleCommandHandlerTests
             SaveChangesCalled = true;
             return Task.FromResult(1);
         }
+
+        public Task ExecuteInTransactionAsync(
+            Func<CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default)
+        {
+            return operation(cancellationToken);
+        }
     }
 
     private sealed class FakeBrandRepository(bool exists = true)

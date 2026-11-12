@@ -33,13 +33,20 @@ public sealed class SetDefaultAddressCommandHandler(
         if (addressToSetAsDefault.IsDefault)
             return;
 
-        foreach (var currentDefaultAddress in addresses.Where(address => address.IsDefault))
-            currentDefaultAddress.UnsetAsDefault();
+        // Persist removal of the current default before setting the new one. PostgreSQL
+        // enforces the filtered unique index per statement, so saving both changes in an
+        // arbitrary EF Core update order can violate the index even though the final state
+        // would contain only one default address. Both saves run in one transaction so a
+        // failure cannot leave the user without a default address.
+        await unitOfWork.ExecuteInTransactionAsync(async transactionCancellationToken =>
+        {
+            foreach (var currentDefaultAddress in addresses.Where(address => address.IsDefault))
+                currentDefaultAddress.UnsetAsDefault();
 
-        addressToSetAsDefault.SetAsDefault();
+            await unitOfWork.SaveChangesAsync(transactionCancellationToken);
 
-        // The existing filtered unique index guarantees that only one default address
-        // can be persisted per user, including when concurrent requests race.
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+            addressToSetAsDefault.SetAsDefault();
+            await unitOfWork.SaveChangesAsync(transactionCancellationToken);
+        }, cancellationToken);
     }
 }
