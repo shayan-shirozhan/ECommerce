@@ -12,6 +12,11 @@ public interface IAddressRepository
         Guid userId,
         CancellationToken cancellationToken = default);
 
+    Task<Address?> GetByIdForUserAsync(
+        Guid addressId,
+        Guid userId,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         Address address,
         CancellationToken cancellationToken = default);
