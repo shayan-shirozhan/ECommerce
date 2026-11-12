@@ -1,5 +1,6 @@
 using ECommerce.Application.Features.Addresses.CreateAddress;
 using ECommerce.Application.Features.Addresses.GetMyAddresses;
+using ECommerce.Application.Features.Addresses.SetDefaultAddress;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -45,6 +46,24 @@ public sealed class AddressesController(ISender sender) : ControllerBase
                 request.City,
                 request.PostalCode,
                 request.AddressLine),
+            cancellationToken);
+
+        return NoContent();
+    }
+
+
+    [HttpPut("{id:guid}/default")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> SetDefault(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        await sender.Send(
+            new SetDefaultAddressCommand(id),
             cancellationToken);
 
         return NoContent();

@@ -67,6 +67,15 @@ Authorization: Bearer {{CustomerToken}}
   "isDefault": true
 }
 
+
+### Set Default Address
+
+PUT {{ECommerce_API_HostAddress}}/api/addresses/{{AddressId}}/default
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
 ### Get current user's addresses
 
 GET {{ECommerce_API_HostAddress}}/api/addresses/my
