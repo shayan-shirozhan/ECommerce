@@ -1,5 +1,6 @@
 ﻿using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.ProductImages.CreateProductImage;
+using ECommerce.Application.Features.Catalog.ProductImages.DeleteProductImage;
 using ECommerce.Application.Features.Catalog.ProductImages.GetProductImageById;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -25,5 +26,17 @@ public class ProductImagesController(ISender sender) : ControllerBase
     {
         var imageId = await sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetProductImage), new { Id = imageId }, new { Id = imageId });
+    }
+
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
+    {
+        await sender.Send(new DeleteProductImageCommand(id), cancellationToken);
+        return NoContent();
     }
 }

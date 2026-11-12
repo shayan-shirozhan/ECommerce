@@ -20,4 +20,17 @@ internal sealed class ProductImageRepository(ECommerceDbContext dbContext) : IPr
             .ThenInclude(x => x!.Product)
             .FirstOrDefaultAsync(x => x.Id == productImageId, cancellationToken);
     }
+
+    public async Task<ProductImage?> GetByIdForUpdateAsync(
+        Guid productImageId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.ProductImages
+            .FirstOrDefaultAsync(image => image.Id == productImageId, cancellationToken);
+    }
+
+    public void Remove(ProductImage productImage)
+    {
+        dbContext.ProductImages.Remove(productImage);
+    }
 }

@@ -217,6 +217,15 @@ public sealed class PublicCatalogImageVisibilityTests
 
         public Task<ProductImage?> GetByIdAsync(Guid productImageId, CancellationToken cancellationToken = default) =>
             Task.FromResult(image?.Id == productImageId ? image : null);
+
+        public Task<ProductImage?> GetByIdForUpdateAsync(
+            Guid productImageId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(image?.Id == productImageId ? image : null);
+
+        public void Remove(ProductImage productImage)
+        {
+        }
     }
 
     private sealed class FakeProductVariantRepository(ProductVariant? variant) : IProductVariantRepository
