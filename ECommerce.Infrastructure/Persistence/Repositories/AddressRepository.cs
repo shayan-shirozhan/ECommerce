@@ -45,4 +45,9 @@ internal sealed class AddressRepository(ECommerceDbContext dbContext) : IAddress
     {
         await dbContext.Addresses.AddAsync(address, cancellationToken);
     }
+
+    public void Remove(Address address)
+    {
+        dbContext.Addresses.Remove(address);
+    }
 }

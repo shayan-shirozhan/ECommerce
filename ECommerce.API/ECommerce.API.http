@@ -76,6 +76,13 @@ Authorization: Bearer {{CustomerToken}}
 
 ###
 
+### Delete Address
+
+DELETE {{ECommerce_API_HostAddress}}/api/addresses/{{AddressId}}
+Authorization: Bearer {{CustomerToken}}
+
+###
+
 ### Get current user's addresses
 
 GET {{ECommerce_API_HostAddress}}/api/addresses/my

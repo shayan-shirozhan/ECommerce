@@ -1,4 +1,5 @@
 using ECommerce.Application.Features.Addresses.CreateAddress;
+using ECommerce.Application.Features.Addresses.DeleteAddress;
 using ECommerce.Application.Features.Addresses.GetMyAddresses;
 using ECommerce.Application.Features.Addresses.SetDefaultAddress;
 using MediatR;
@@ -64,6 +65,23 @@ public sealed class AddressesController(ISender sender) : ControllerBase
     {
         await sender.Send(
             new SetDefaultAddressCommand(id),
+            cancellationToken);
+
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Delete(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        await sender.Send(
+            new DeleteAddressCommand(id),
             cancellationToken);
 
         return NoContent();
