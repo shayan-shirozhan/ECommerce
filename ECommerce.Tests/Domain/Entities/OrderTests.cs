@@ -277,6 +277,41 @@ public sealed class OrderTests
     }
 
     [Test]
+    public void MoveSellerGroupToDelivered_should_allow_delivery_while_another_group_is_still_processing()
+    {
+        // Arrange: both sellers have started processing, but only the first seller has shipped.
+        var (order, firstSellerId, secondSellerId) = CreateConfirmedOrderWithMultipleSellerGroups();
+        order.MoveSellerGroupToProcessing(firstSellerId);
+        order.MoveSellerGroupToProcessing(secondSellerId);
+        order.MoveSellerGroupToShipped(firstSellerId);
+
+        // Act: the first seller delivers independently of the second seller's progress.
+        order.MoveSellerGroupToDelivered(firstSellerId);
+
+        // Assert: the aggregate remains Processing while the second group is Processing.
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Processing));
+            Assert.That(GetSellerGroup(order, firstSellerId).Status,
+                Is.EqualTo(OrderGroupStatus.Delivered));
+            Assert.That(GetSellerGroup(order, secondSellerId).Status,
+                Is.EqualTo(OrderGroupStatus.Processing));
+        });
+
+        // Act: the second seller can then ship and deliver their own group.
+        order.MoveSellerGroupToShipped(secondSellerId);
+        order.MoveSellerGroupToDelivered(secondSellerId);
+
+        // Assert: the aggregate becomes Delivered only after every seller group is delivered.
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Delivered));
+            Assert.That(order.Groups.Select(group => group.Status),
+                Is.All.EqualTo(OrderGroupStatus.Delivered));
+        });
+    }
+
+    [Test]
     public void MoveSellerGroupToProcessing_should_reject_seller_without_a_group_without_changing_order()
     {
         // Arrange

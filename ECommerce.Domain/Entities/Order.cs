@@ -160,13 +160,12 @@ public class Order : AuditableEntity
 
     public void MoveSellerGroupToDelivered(Guid sellerId)
     {
-        if (Status != OrderStatus.Shipped)
-            throw new DomainException("Order cannot move to delivered in its current state.");
-
         var orderGroup = _groups.SingleOrDefault(group => group.SellerId == sellerId);
 
         if (orderGroup is null) throw new DomainException("Order group for this seller was not found.");
 
+        // Seller groups progress independently. The selected group enforces that it
+        // must be Shipped; the aggregate order status is derived after the transition.
         orderGroup.MoveToDelivered();
 
         UpdateStatusFromGroups();

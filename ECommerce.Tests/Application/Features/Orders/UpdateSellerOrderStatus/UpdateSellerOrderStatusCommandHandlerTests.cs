@@ -201,6 +201,63 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
     }
 
     [Test]
+    public async Task Handle_should_allow_seller_to_deliver_while_another_seller_group_is_still_processing()
+    {
+        // Arrange: both sellers are processing, and only the first seller has shipped.
+        var seeded = await SeedConfirmedOrderAsync((order, firstSellerId, secondSellerId) =>
+        {
+            order.MoveSellerGroupToProcessing(firstSellerId);
+            order.MoveSellerGroupToProcessing(secondSellerId);
+            order.MoveSellerGroupToShipped(firstSellerId);
+        });
+        using var firstSellerProvider = CreateProvider(seeded.FirstSellerId);
+
+        // Act: the first seller delivers their group while the second group is still Processing.
+        var firstResponse = await SendAsync(
+            firstSellerProvider,
+            seeded.OrderId,
+            OrderGroupStatus.Delivered);
+
+        await using (var intermediateContext = CreateDbContext())
+        {
+            var intermediateOrder = await intermediateContext.Orders
+                .Include(order => order.Groups)
+                .SingleAsync(order => order.Id == seeded.OrderId);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(firstResponse.OrderStatus, Is.EqualTo(OrderStatus.Processing));
+                Assert.That(firstResponse.OrderGroupStatus, Is.EqualTo(OrderGroupStatus.Delivered));
+                Assert.That(intermediateOrder.Status, Is.EqualTo(OrderStatus.Processing));
+                Assert.That(GetSellerGroup(intermediateOrder, seeded.SecondSellerId).Status,
+                    Is.EqualTo(OrderGroupStatus.Processing));
+            });
+        }
+
+        // Act: the second seller can finish their independent shipment afterwards.
+        using var secondSellerProvider = CreateProvider(seeded.SecondSellerId);
+        await SendAsync(secondSellerProvider, seeded.OrderId, OrderGroupStatus.Shipped);
+        var secondResponse = await SendAsync(
+            secondSellerProvider,
+            seeded.OrderId,
+            OrderGroupStatus.Delivered);
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(order => order.Groups)
+            .SingleAsync(order => order.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(secondResponse.OrderStatus, Is.EqualTo(OrderStatus.Delivered));
+            Assert.That(secondResponse.OrderGroupStatus, Is.EqualTo(OrderGroupStatus.Delivered));
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Delivered));
+            Assert.That(persistedOrder.Groups.Select(group => group.Status),
+                Is.All.EqualTo(OrderGroupStatus.Delivered));
+        });
+    }
+
+    [Test]
     public void Handle_should_reject_request_without_authenticated_user_id()
     {
         // Arrange
