@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Catalog.ProductVariants.SellerOffers.ActiveSellerOffer;
@@ -262,6 +262,12 @@ public sealed class SellerOfferHandlerTests
         {
             return Task.FromResult(Variant?.Id == productVariantId);
         }
+
+        public Task<bool> ExistsBySkuAsync(
+            string sku,
+            Guid? exceptProductVariantId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
 
         public Task AddAsync(
             ProductVariant productVariant,

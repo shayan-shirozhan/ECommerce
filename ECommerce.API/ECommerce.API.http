@@ -430,6 +430,17 @@ Accept: application/json
 
 ###
 
+### Update Product Variant
+
+PUT {{ECommerce_API_HostAddress}}/api/product-variants/{{ProductVariantId}}
+Authorization: Bearer {{AdminToken}}
+Content-Type: application/json
+
+{
+  "sku": "SKU-UPDATED",
+  "name": "Updated variant name"
+}
+
 ### Activate Product Variant (Admin)
 
 PUT {{ECommerce_API_HostAddress}}/api/product-variants/{{ProductVariantId}}/activate
