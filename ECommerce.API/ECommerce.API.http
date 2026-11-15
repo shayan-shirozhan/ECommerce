@@ -744,3 +744,25 @@ Accept: application/json
 Authorization: Bearer {{CustomerToken}}
 
 ###
+
+# -------------------------------------------------------------------
+# Wishlist
+# -------------------------------------------------------------------
+
+### Get current user's wishlist
+GET {{ECommerce_API_HostAddress}}/api/wishlist
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+### Add product to wishlist (idempotent)
+POST {{ECommerce_API_HostAddress}}/api/wishlist/items
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "productId": "{{ProductId}}"
+}
+
+### Remove product from wishlist
+DELETE {{ECommerce_API_HostAddress}}/api/wishlist/items/{{ProductId}}
+Authorization: Bearer {{CustomerToken}}
