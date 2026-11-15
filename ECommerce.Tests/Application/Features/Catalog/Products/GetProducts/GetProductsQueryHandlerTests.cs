@@ -13,6 +13,10 @@ public sealed class GetProductsQueryHandlerTests
         var categoryId = Guid.NewGuid();
         var createdAt = new DateTime(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
 
+        var listingImage = new ProductListingImage(
+            "https://example.test/listing-image.jpg",
+            "Product listing image");
+
         var listingItem = new ProductListingItem(
             productId,
             "Test product",
@@ -22,7 +26,8 @@ public sealed class GetProductsQueryHandlerTests
             categoryId,
             "Test category",
             createdAt,
-            150m);
+            150m,
+            listingImage);
 
         var repository = new FakeProductRepository(
             new[] { listingItem },
@@ -43,6 +48,9 @@ public sealed class GetProductsQueryHandlerTests
         var response = await handler.Handle(
             query,
             CancellationToken.None);
+
+        var image = response.Items[0].Image
+            ?? throw new InvalidOperationException("Expected product listing image.");
 
         Assert.Multiple(() =>
         {
@@ -66,6 +74,8 @@ public sealed class GetProductsQueryHandlerTests
                 Is.EqualTo("Test category"));
             Assert.That(response.Items[0].CreatedAt, Is.EqualTo(createdAt));
             Assert.That(response.Items[0].Price, Is.EqualTo(150m));
+            Assert.That(image.Url, Is.EqualTo(listingImage.Url));
+            Assert.That(image.AltText, Is.EqualTo(listingImage.AltText));
 
             Assert.That(repository.RequestedPage, Is.EqualTo(2));
             Assert.That(repository.RequestedPageSize, Is.EqualTo(5));

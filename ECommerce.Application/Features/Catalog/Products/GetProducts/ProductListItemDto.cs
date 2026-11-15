@@ -10,4 +10,5 @@ public sealed record ProductListItemDto(
     BrandDto Brand,
     CategoryDto Category,
     DateTime CreatedAt,
-    decimal? Price);
+    decimal? Price,
+    ProductListImageDto? Image);

@@ -43,7 +43,12 @@ public sealed class GetProductsQueryHandler(
                 new BrandDto(product.BrandId, product.BrandName),
                 new CategoryDto(product.CategoryId, product.CategoryName),
                 product.CreatedAt,
-                product.Price))
+                product.Price,
+                product.Image is null
+                    ? null
+                    : new ProductListImageDto(
+                        product.Image.Url,
+                        product.Image.AltText)))
             .ToList();
 
         return new GetProductsResponse(
