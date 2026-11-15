@@ -17,12 +17,17 @@ public class CreateProductImageCommandHandler(
         if (!productExists)
             throw new NotFoundException($"Product with id '{command.ProductId}' was not found.");
 
-        if (command.ProductVariantId.HasValue)
+        if (command.ProductVariantId is Guid productVariantId)
         {
-            var variantExists =
-                await productVariantRepository.ExistsAsync(command.ProductVariantId.Value, cancellationToken);
-            if (!variantExists)
-                throw new NotFoundException($"Product variant with id '{command.ProductVariantId}' was not found.");
+            var variant = await productVariantRepository.GetByIdWithDetailsAsync(
+                productVariantId,
+                cancellationToken);
+
+            if (variant is null)
+                throw new NotFoundException($"Product variant with id '{productVariantId}' was not found.");
+
+            if (variant.ProductId != command.ProductId)
+                throw new BusinessRuleException("Product variant must belong to the specified product.");
         }
 
         var productImage = ProductImage.Create(
