@@ -108,3 +108,4 @@ The integration tests use Testcontainers and require Docker to be available.
 - Scalar and the generated OpenAPI document are exposed only in Development by default. Do not enable the Development environment in a public deployment.
 - Customer address management supports creating, listing, updating, deleting, and selecting a default address. Deleting the default address promotes the most recently created remaining address; deleting the final address leaves the account without a saved default address.
 - Cart, order, and payment workflows are implemented end-to-end, including cart item management, order creation and customer/seller order queries, seller order-status updates, mock payment initiation/completion, and customer order cancellation.
+- Public catalog browsing includes paginated product search/filtering plus public brand and category listings; category responses include parent IDs for building category trees.

@@ -24,6 +24,21 @@ internal sealed class CategoryRepository(
         await dbContext.Categories.AddAsync(category, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<CategoryListingItem>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Categories
+            .AsNoTracking()
+            .Where(category => !category.IsDeleted)
+            .OrderBy(category => category.Name)
+            .ThenBy(category => category.Id)
+            .Select(category => new CategoryListingItem(
+                category.Id,
+                category.Name,
+                category.ParentCategoryId))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Category?> GetByIdAsync(
         Guid categoryId,
         CancellationToken cancellationToken = default)

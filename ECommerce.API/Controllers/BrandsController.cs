@@ -3,6 +3,7 @@ using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.Brands.CreateBrand;
 using ECommerce.Application.Features.Catalog.Brands.DeleteBrand;
 using ECommerce.Application.Features.Catalog.Brands.GetBrandById;
+using ECommerce.Application.Features.Catalog.Brands.GetBrands;
 using ECommerce.Application.Features.Catalog.Brands.UpdateBrand;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -15,6 +16,18 @@ namespace ECommerce.API.Controllers;
 [Authorize(Roles = ApplicationRoles.Admin)]
 public class BrandsController(ISender sender) : ControllerBase
 {
+    [AllowAnonymous]
+    [HttpGet]
+    public async Task<ActionResult<GetBrandsResponse>> GetAll(
+        CancellationToken cancellationToken)
+    {
+        var brands = await sender.Send(
+            new GetBrandsQuery(),
+            cancellationToken);
+
+        return Ok(brands);
+    }
+
     [AllowAnonymous]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<BrandDto>> GetById(

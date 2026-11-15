@@ -256,6 +256,11 @@ public sealed class CatalogManagementCommandHandlerTests
             return Task.CompletedTask;
         }
 
+        public Task<IReadOnlyList<BrandListingItem>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BrandListingItem>>(
+                Array.Empty<BrandListingItem>());
+
         public Task<Brand?> GetByIdAsync(
             Guid brandId,
             CancellationToken cancellationToken = default)
@@ -309,6 +314,11 @@ public sealed class CatalogManagementCommandHandlerTests
             _categories.Add(category);
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<CategoryListingItem>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<CategoryListingItem>>(
+                Array.Empty<CategoryListingItem>());
 
         public Task<Category?> GetByIdAsync(
             Guid categoryId,

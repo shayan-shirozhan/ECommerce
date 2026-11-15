@@ -12,6 +12,9 @@ public interface IBrandRepository
         Brand brand,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<BrandListingItem>> GetAllAsync(
+        CancellationToken cancellationToken = default);
+
     Task<Brand?> GetByIdAsync(
         Guid brandId,
         CancellationToken cancellationToken = default);
