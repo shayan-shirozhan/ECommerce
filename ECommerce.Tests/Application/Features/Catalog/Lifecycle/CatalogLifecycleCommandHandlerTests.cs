@@ -201,6 +201,12 @@ public sealed class CatalogLifecycleCommandHandlerTests
         public Task<bool> ExistsAsync(Guid productVariantId, CancellationToken cancellationToken = default) =>
             Task.FromResult(VariantForUpdate?.Id == productVariantId);
 
+        public Task<bool> ExistsBySkuAsync(
+            string sku,
+            Guid? exceptProductVariantId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
         public Task AddAsync(ProductVariant productVariant, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 

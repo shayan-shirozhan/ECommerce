@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Persistence;
+using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +9,17 @@ internal sealed class ProductVariantRepository(ECommerceDbContext dbContext) : I
     public async Task<bool> ExistsAsync(Guid productVariantId, CancellationToken cancellationToken = default)
     {
         return await dbContext.ProductVariants.AnyAsync(x => x.Id == productVariantId, cancellationToken);
+    }
+
+    public async Task<bool> ExistsBySkuAsync(
+        string sku,
+        Guid? exceptProductVariantId = null,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.ProductVariants.AnyAsync(
+            variant => variant.SKU == sku &&
+                       (!exceptProductVariantId.HasValue || variant.Id != exceptProductVariantId.Value),
+            cancellationToken);
     }
 
     public async Task AddAsync(ProductVariant productVariant, CancellationToken cancellationToken = default)

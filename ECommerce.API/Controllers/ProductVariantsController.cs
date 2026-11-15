@@ -1,8 +1,10 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+using ECommerce.API.Contracts.Catalog;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.ProductVariants.CreateProductVariant;
 using ECommerce.Application.Features.Catalog.ProductVariants.ActivateProductVariant;
 using ECommerce.Application.Features.Catalog.ProductVariants.DeactivateProductVariant;
 using ECommerce.Application.Features.Catalog.ProductVariants.GetProductVariantById;
+using ECommerce.Application.Features.Catalog.ProductVariants.UpdateProductVariant;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -20,6 +22,25 @@ public class ProductVariantsController(ISender sender) : ControllerBase
     {
         var variant = await sender.Send(new GetProductVariantByIdQuery(id), cancellationToken);
         return Ok(variant);
+    }
+
+    [HttpPut("{id:guid}")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Update(
+        Guid id,
+        [FromBody] UpdateProductVariantRequest request,
+        CancellationToken cancellationToken)
+    {
+        await sender.Send(
+            new UpdateProductVariantCommand(id, request.SKU, request.Name),
+            cancellationToken);
+
+        return NoContent();
     }
 
     [HttpPut("{id:guid}/activate")]

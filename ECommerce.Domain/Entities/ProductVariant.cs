@@ -1,4 +1,4 @@
-﻿using ECommerce.Domain.Common;
+using ECommerce.Domain.Common;
 using ECommerce.Domain.Enums;
 using ECommerce.Domain.Exceptions;
 
@@ -17,14 +17,7 @@ public class ProductVariant : AuditableEntity
         if (productId == Guid.Empty)
             throw new DomainException("Product ID is required.");
 
-        if (string.IsNullOrWhiteSpace(sku))
-            throw new DomainException("SKU is required.");
-
-        if (sku.Length > 100)
-            throw new DomainException("SKU cannot be exceed 100 characters.");
-
-        if (name is not null && name.Length > 150)
-            throw new DomainException("Variant name cannot be exceed 150 characters.");
+        ValidateDetails(sku, name);
 
         ProductId = productId;
         SKU = sku;
@@ -59,6 +52,29 @@ public class ProductVariant : AuditableEntity
             throw new DomainException("Product is required.");
 
         return new ProductVariant(product, sku, name);
+    }
+
+    public void UpdateDetails(string sku, string? name)
+    {
+        ValidateDetails(sku, name);
+
+        SKU = sku;
+        Name = name;
+    }
+
+    private static void ValidateDetails(string sku, string? name)
+    {
+        if (string.IsNullOrWhiteSpace(sku))
+            throw new DomainException("SKU is required.");
+
+        if (sku.Length > 100)
+            throw new DomainException("SKU cannot be exceed 100 characters.");
+
+        if (name is not null && string.IsNullOrWhiteSpace(name))
+            throw new DomainException("Variant name cannot be empty.");
+
+        if (name is not null && name.Length > 150)
+            throw new DomainException("Variant name cannot be exceed 150 characters.");
     }
 
     public void Activate(Product parentProduct)

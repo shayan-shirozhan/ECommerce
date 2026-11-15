@@ -233,6 +233,12 @@ public sealed class PublicCatalogImageVisibilityTests
         public Task<bool> ExistsAsync(Guid productVariantId, CancellationToken cancellationToken = default) =>
             Task.FromResult(variant?.Id == productVariantId);
 
+        public Task<bool> ExistsBySkuAsync(
+            string sku,
+            Guid? exceptProductVariantId = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(false);
+
         public Task AddAsync(ProductVariant productVariant, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
