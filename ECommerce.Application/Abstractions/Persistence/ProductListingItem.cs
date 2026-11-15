@@ -9,4 +9,5 @@ public sealed record ProductListingItem(
     Guid CategoryId,
     string CategoryName,
     DateTime CreatedAt,
-    decimal? Price);
+    decimal? Price,
+    ProductListingImage? Image);

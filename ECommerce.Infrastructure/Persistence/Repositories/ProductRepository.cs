@@ -55,7 +55,16 @@ internal sealed class ProductRepository(
                     .Where(offer =>
                         offer.Status == SellerOfferStatus.Active)
                     .Select(offer => (decimal?)offer.Price)
-                    .Min()))
+                    .Min(),
+                product.Images
+                    .Where(image =>
+                        image.ProductVariantId == null
+                        || image.ProductVariant!.Status == ProductVariantStatus.Active)
+                    .OrderByDescending(image => image.IsPrimary)
+                    .ThenBy(image => image.SortOrder)
+                    .ThenBy(image => image.Id)
+                    .Select(image => new ProductListingImage(image.Url, image.AltText))
+                    .FirstOrDefault()))
             .ToListAsync(cancellationToken);
     }
 
