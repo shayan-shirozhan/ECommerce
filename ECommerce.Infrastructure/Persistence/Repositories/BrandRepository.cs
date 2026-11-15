@@ -24,6 +24,20 @@ internal sealed class BrandRepository(
         await dbContext.Brands.AddAsync(brand, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<BrandListingItem>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Brands
+            .AsNoTracking()
+            .Where(brand => !brand.IsDeleted)
+            .OrderBy(brand => brand.Name)
+            .ThenBy(brand => brand.Id)
+            .Select(brand => new BrandListingItem(
+                brand.Id,
+                brand.Name))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<Brand?> GetByIdAsync(
         Guid brandId,
         CancellationToken cancellationToken = default)

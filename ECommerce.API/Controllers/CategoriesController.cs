@@ -3,6 +3,7 @@ using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Catalog.Categories.CreateCategory;
 using ECommerce.Application.Features.Catalog.Categories.DeleteCategory;
 using ECommerce.Application.Features.Catalog.Categories.GetCategoryById;
+using ECommerce.Application.Features.Catalog.Categories.GetCategories;
 using ECommerce.Application.Features.Catalog.Categories.UpdateCategory;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
@@ -15,6 +16,18 @@ namespace ECommerce.API.Controllers;
 [Authorize(Roles = ApplicationRoles.Admin)]
 public class CategoriesController(ISender sender) : ControllerBase
 {
+    [AllowAnonymous]
+    [HttpGet]
+    public async Task<ActionResult<GetCategoriesResponse>> GetAll(
+        CancellationToken cancellationToken)
+    {
+        var categories = await sender.Send(
+            new GetCategoriesQuery(),
+            cancellationToken);
+
+        return Ok(categories);
+    }
+
     [AllowAnonymous]
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<CategoryDto>> GetById(

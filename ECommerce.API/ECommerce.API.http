@@ -300,6 +300,11 @@ Accept: application/json
 GET {{ECommerce_API_HostAddress}}/api/products?sortBy=invalid
 Accept: application/json
 
+### Get All Brands (Public)
+
+GET {{ECommerce_API_HostAddress}}/api/brands
+Accept: application/json
+
 ### Get Brand
 
 GET {{ECommerce_API_HostAddress}}/api/brands/{{BrandId}}
@@ -354,6 +359,11 @@ Authorization: Bearer {{AdminToken}}
 }
 
 ###
+
+### Get All Categories (Public)
+
+GET {{ECommerce_API_HostAddress}}/api/categories
+Accept: application/json
 
 ### Get Category
 

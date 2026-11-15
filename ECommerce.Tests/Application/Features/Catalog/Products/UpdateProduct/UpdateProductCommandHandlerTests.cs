@@ -175,6 +175,11 @@ public sealed class UpdateProductCommandHandlerTests
             CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
 
+        public Task<IReadOnlyList<BrandListingItem>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<BrandListingItem>>(
+                Array.Empty<BrandListingItem>());
+
         public Task<Brand?> GetByIdAsync(
             Guid brandId,
             CancellationToken cancellationToken = default) =>
@@ -203,6 +208,11 @@ public sealed class UpdateProductCommandHandlerTests
             Category category,
             CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+
+        public Task<IReadOnlyList<CategoryListingItem>> GetAllAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<CategoryListingItem>>(
+                Array.Empty<CategoryListingItem>());
 
         public Task<Category?> GetByIdAsync(
             Guid categoryId,

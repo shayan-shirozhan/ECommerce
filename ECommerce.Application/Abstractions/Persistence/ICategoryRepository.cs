@@ -12,6 +12,9 @@ public interface ICategoryRepository
         Category category,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<CategoryListingItem>> GetAllAsync(
+        CancellationToken cancellationToken = default);
+
     Task<Category?> GetByIdAsync(
         Guid categoryId,
         CancellationToken cancellationToken = default);
