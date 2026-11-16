@@ -31,7 +31,7 @@ public sealed class OrderTests
     }
 
     [Test]
-    public void InitiatePayment_should_reject_order_that_is_not_pending()
+    public void InitiatePayment_should_reject_order_with_an_active_payment()
     {
         // Arrange
         var order = CreateOrderWithItem();
@@ -48,6 +48,64 @@ public sealed class OrderTests
             Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
             Assert.That(order.Payments, Has.Count.EqualTo(1));
             Assert.That(order.Payments.Single(), Is.SameAs(firstPayment));
+        });
+    }
+
+
+    [Test]
+    public void InitiatePayment_should_allow_retry_after_previous_payment_failed()
+    {
+        var order = CreateOrderWithItem();
+        var firstPayment = order.InitiatePayment();
+        firstPayment.MarkFailed();
+
+        var retryPayment = order.InitiatePayment(PaymentMethod.ZarinPal);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments, Has.Count.EqualTo(2));
+            Assert.That(firstPayment.Status, Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(retryPayment.Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(retryPayment.PaymentMethod, Is.EqualTo(PaymentMethod.ZarinPal));
+            Assert.That(retryPayment.Id, Is.Not.EqualTo(firstPayment.Id));
+        });
+    }
+
+    [Test]
+    public void InitiatePayment_should_allow_retry_after_previous_payment_was_cancelled()
+    {
+        var order = CreateOrderWithItem();
+        var firstPayment = order.InitiatePayment();
+        firstPayment.Cancel();
+
+        var retryPayment = order.InitiatePayment();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments, Has.Count.EqualTo(2));
+            Assert.That(firstPayment.Status, Is.EqualTo(PaymentStatus.Cancelled));
+            Assert.That(retryPayment.Status, Is.EqualTo(PaymentStatus.Pending));
+        });
+    }
+
+    [Test]
+    public void InitiatePayment_should_reject_retry_when_previous_payment_was_successful()
+    {
+        var order = CreateOrderWithItem();
+        var firstPayment = order.InitiatePayment();
+        firstPayment.MarkSuccessful("txn-unique");
+        order.Confirm();
+
+        var exception = Assert.Throws<DomainException>(
+            () => order.InitiatePayment());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception, Is.Not.Null);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(order.Payments, Has.Count.EqualTo(1));
         });
     }
 
@@ -68,6 +126,25 @@ public sealed class OrderTests
             Assert.That(order.TotalAmount, Is.Zero);
             Assert.That(order.Status, Is.EqualTo(OrderStatus.Pending));
             Assert.That(order.Payments, Is.Empty);
+        });
+    }
+
+
+    [Test]
+    public void Payment_should_store_authority_and_provider_reference_id()
+    {
+        var order = CreateOrderWithItem();
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+
+        payment.SetAuthority("A000000000000000000000000000000000");
+        payment.MarkSuccessful(refId: 123456789L);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(payment.Authority, Is.EqualTo("A000000000000000000000000000000000"));
+            Assert.That(payment.RefId, Is.EqualTo(123456789L));
+            Assert.That(payment.TransactionId, Is.Null);
+            Assert.That(payment.Status, Is.EqualTo(PaymentStatus.Successful));
         });
     }
 

@@ -2,5 +2,6 @@
 
 public enum PaymentMethod
 {
-    Mock = 1
+    Mock = 1,
+    ZarinPal = 2
 }

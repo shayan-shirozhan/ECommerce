@@ -2,9 +2,10 @@ using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
-using ECommerce.Application.Features.Orders;
+using ECommerce.Application.Options;
 using ECommerce.Domain.Enums;
 using MediatR;
+using Microsoft.Extensions.Options;
 
 namespace ECommerce.Application.Features.Payments.CompleteMockPayment;
 
@@ -12,7 +13,7 @@ public sealed class CompleteMockPaymentCommandHandler(
     ICurrentUser currentUser,
     IOrderRepository orderRepository,
     IPaymentGateway paymentGateway,
-    ISellerOfferRepository sellerOfferRepository,
+    IOptions<OrderExpirationOptions> expirationOptions,
     IUnitOfWork unitOfWork)
     : IRequestHandler<CompleteMockPaymentCommand, CompleteMockPaymentResponse>
 {
@@ -39,7 +40,6 @@ public sealed class CompleteMockPaymentCommandHandler(
 
         if (payment is null)
         {
-            // Defensive check: the repository filters by PaymentId and includes Payments.
             throw new NotFoundException(
                 $"Payment with id '{command.PaymentId}' was not found.");
         }
@@ -54,6 +54,17 @@ public sealed class CompleteMockPaymentCommandHandler(
         {
             throw new BusinessRuleException(
                 "Only orders awaiting payment can be completed.");
+        }
+
+        var paymentWindow = TimeSpan.FromMinutes(
+            expirationOptions.Value.PaymentWindowMinutes);
+
+        var cutoffUtc = DateTime.UtcNow.Subtract(paymentWindow);
+
+        if (order.CreatedAt <= cutoffUtc)
+        {
+            throw new BusinessRuleException(
+                "The payment window for this order has expired.");
         }
 
         var gatewayResult = await paymentGateway.ProcessAsync(
@@ -77,18 +88,13 @@ public sealed class CompleteMockPaymentCommandHandler(
         }
         else
         {
-            payment.MockFailed();
-            order.Cancel();
-
-            await OrderInventoryRestorer.RestoreAsync(
-                order,
-                sellerOfferRepository,
-                cancellationToken);
+            // A failed attempt does not cancel the order. The customer can retry
+            // with a new Payment while the order remains AwaitingPayment.
+            payment.MarkFailed();
         }
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // Return the final state held by the domain entity, not the raw gateway result.
         return new CompleteMockPaymentResponse(
             payment.Id,
             order.Id,

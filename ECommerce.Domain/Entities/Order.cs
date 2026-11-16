@@ -202,11 +202,28 @@ public class Order : AuditableEntity
         _payments.Add(payment);
     }
 
-    public Payment InitiatePayment()
+    public Payment InitiatePayment(PaymentMethod paymentMethod = PaymentMethod.Mock)
     {
-        var payment = Payment.Create(Id, TotalAmount, PaymentMethod.Mock);
-        MoveToAwaitingPayment();
+        if (Status is not (OrderStatus.Pending or OrderStatus.AwaitingPayment))
+            throw new DomainException("Only pending or awaiting-payment orders can initiate a payment.");
+
+        if (_payments.Any(payment => payment.Status == PaymentStatus.Pending))
+            throw new DomainException("An active payment already exists for this order.");
+
+        if (_payments.Any(payment => payment.Status == PaymentStatus.Successful))
+            throw new DomainException("This order has already been paid.");
+
+        var payment = Payment.Create(Id, TotalAmount, paymentMethod);
+
+        if (Status == OrderStatus.Pending)
+            MoveToAwaitingPayment();
+
         AddPayment(payment);
+
+        // Ensure the order concurrency token participates in payment initiation,
+        // including retries while the order is already awaiting payment.
+        UpdatedAt = DateTime.UtcNow;
+
         return payment;
     }
 

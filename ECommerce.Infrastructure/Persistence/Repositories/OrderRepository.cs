@@ -1,24 +1,18 @@
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Domain.Entities;
+using ECommerce.Domain.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace ECommerce.Infrastructure.Persistence.Repositories;
 
-internal sealed class OrderRepository(
-    ECommerceDbContext dbContext) : IOrderRepository
+internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepository
 {
-    public async Task AddAsync(
-        Order order,
-        CancellationToken cancellationToken = default)
+    public async Task AddAsync(Order order, CancellationToken cancellationToken = default)
     {
-        await dbContext.Orders.AddAsync(
-            order,
-            cancellationToken);
+        await dbContext.Orders.AddAsync(order, cancellationToken);
     }
 
-    public async Task<string?> GetSellerDisplayNameAsync(
-        Guid sellerId,
-        CancellationToken cancellationToken = default)
+    public async Task<string?> GetSellerDisplayNameAsync(Guid sellerId, CancellationToken cancellationToken = default)
     {
         var seller = await dbContext.Users
             .AsNoTracking()
@@ -43,9 +37,7 @@ internal sealed class OrderRepository(
             : displayName;
     }
 
-    public async Task<IReadOnlyList<Order>> GetByUserIdAsync(
-        Guid userId,
-        CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<Order>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await dbContext.Orders
             .AsNoTracking()
@@ -56,8 +48,7 @@ internal sealed class OrderRepository(
             .ToListAsync(cancellationToken);
     }
 
-    public Task<Order?> GetByIdForUserAsync(Guid orderId, Guid userId,
-        CancellationToken cancellationToken = default)
+    public Task<Order?> GetByIdForUserAsync(Guid orderId, Guid userId, CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
             .AsNoTracking()
@@ -76,9 +67,7 @@ internal sealed class OrderRepository(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<Order?> GetByIdForUserForCancellationAsync(
-        Guid orderId,
-        Guid userId,
+    public Task<Order?> GetByIdForUserForCancellationAsync(Guid orderId, Guid userId,
         CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
@@ -90,9 +79,7 @@ internal sealed class OrderRepository(
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public Task<Order?> GetByPaymentIdForUserForUpdateAsync(
-        Guid paymentId,
-        Guid userId,
+    public Task<Order?> GetByPaymentIdForUserForUpdateAsync(Guid paymentId, Guid userId,
         CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
@@ -118,9 +105,7 @@ internal sealed class OrderRepository(
             .ToListAsync(cancellationToken);
     }
 
-    public Task<Order?> GetByIdForSellerAsync(
-        Guid orderId,
-        Guid sellerId,
+    public Task<Order?> GetByIdForSellerAsync(Guid orderId, Guid sellerId,
         CancellationToken cancellationToken = default)
     {
         return dbContext.Orders
@@ -141,6 +126,41 @@ internal sealed class OrderRepository(
                 order.Id == orderId &&
                 order.Groups.Any(group => group.SellerId == sellerId))
             .Include(order => order.Groups)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(DateTime cutoffUtc, int take,
+        CancellationToken cancellationToken = default)
+    {
+        if (take <= 0)
+            throw new ArgumentOutOfRangeException(nameof(take));
+
+        return await dbContext.Orders
+            .AsNoTracking()
+            .Where(order =>
+                order.CreatedAt <= cutoffUtc &&
+                (order.Status == OrderStatus.Pending ||
+                 order.Status == OrderStatus.AwaitingPayment))
+            .OrderBy(order => order.CreatedAt)
+            .ThenBy(order => order.Id)
+            .Select(order => order.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<Order?> GetByIdForExpirationAsync(Guid orderId, DateTime cutoffUtc,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .AsSplitQuery()
+            .Where(order =>
+                order.Id == orderId &&
+                order.CreatedAt <= cutoffUtc &&
+                (order.Status == OrderStatus.Pending ||
+                 order.Status == OrderStatus.AwaitingPayment))
+            .Include(order => order.Payments)
+            .Include(order => order.Groups)
+            .ThenInclude(group => group.Items)
             .FirstOrDefaultAsync(cancellationToken);
     }
 }
