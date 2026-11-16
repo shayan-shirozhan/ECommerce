@@ -3,6 +3,7 @@ using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Payments.CompleteMockPayment;
+using ECommerce.Application.Options;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure;
@@ -64,7 +65,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Handle_should_mark_payment_failed_and_cancel_order_when_gateway_declines()
+    public async Task Handle_should_mark_payment_failed_and_keep_order_open_when_gateway_declines()
     {
         // Arrange
         var userId = Guid.NewGuid();
@@ -89,13 +90,13 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         Assert.Multiple(() =>
         {
             Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.Failed));
-            Assert.That(response.OrderStatus, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(response.OrderStatus, Is.EqualTo(OrderStatus.AwaitingPayment));
             Assert.That(response.TransactionId, Is.Null);
             Assert.That(response.GatewayReference, Is.Null);
             Assert.That(persistedPayment.Status, Is.EqualTo(PaymentStatus.Failed));
-            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Cancelled));
-            Assert.That(persistedOrder.Groups.Single().Status, Is.EqualTo(OrderGroupStatus.Cancelled));
-            Assert.That(persistedOffer.Stock, Is.EqualTo(8));
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Groups.Single().Status, Is.EqualTo(OrderGroupStatus.Pending));
+            Assert.That(persistedOffer.Stock, Is.EqualTo(7));
             Assert.That(gateway.CallCount, Is.EqualTo(1));
         });
     }
@@ -189,6 +190,50 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Handle_should_reject_payment_when_order_payment_window_has_expired()
+    {
+        var userId = Guid.NewGuid();
+        var seeded = await SeedPaymentAsync(userId);
+
+        // Make the order older than the configured 30-minute payment window.
+        await using (var setupContext = CreateDbContext())
+        {
+            var order = await setupContext.Orders
+                .SingleAsync(x => x.Id == seeded.OrderId);
+
+            setupContext.Entry(order)
+                .Property(x => x.CreatedAt)
+                .CurrentValue = DateTime.UtcNow.AddMinutes(-31);
+
+            await setupContext.SaveChangesAsync();
+        }
+
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayResult(true, "txn-unused", null));
+
+        using var provider = CreateProvider(userId, gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await SendAsync(provider, seeded.PaymentId));
+
+        await using var verificationContext = CreateDbContext();
+
+        var persistedOrder = await verificationContext.Orders
+            .Include(x => x.Payments)
+            .SingleAsync(x => x.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(
+                persistedOrder.Payments.Single().Status,
+                Is.EqualTo(PaymentStatus.Pending));
+
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task Handle_should_not_persist_changes_when_successful_gateway_result_has_no_transaction_id()
     {
         // Arrange
@@ -257,7 +302,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Handle_should_restore_stock_only_once_when_payment_failures_are_concurrent()
+    public async Task Handle_should_allow_only_one_failure_transition_when_requests_are_concurrent()
     {
         // Arrange: both requests load the same pending order before either gateway call can finish.
         var userId = Guid.NewGuid();
@@ -270,7 +315,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             CaptureFailureAsync(provider, seeded.PaymentId),
             CaptureFailureAsync(provider, seeded.PaymentId));
 
-        // Assert: only one request can cancel the order and restore the reserved stock.
+        // Assert: Payment concurrency prevents two requests from completing the same attempt.
         Assert.That(outcomes.Count(exception => exception is null), Is.EqualTo(1));
         Assert.That(outcomes.Count(exception => exception is ConcurrencyConflictException), Is.EqualTo(1));
         Assert.That(gateway.CallCount, Is.EqualTo(2));
@@ -284,9 +329,9 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
 
         Assert.Multiple(() =>
         {
-            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
             Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Failed));
-            Assert.That(persistedOffer.Stock, Is.EqualTo(8));
+            Assert.That(persistedOffer.Stock, Is.EqualTo(7));
         });
     }
 
@@ -382,6 +427,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     {
         var configuration = new ConfigurationManager();
         configuration["ConnectionStrings:ECommerceDb"] = ConnectionString;
+        configuration["OrderExpiration:PaymentWindowMinutes"] = "30";
         configuration["Jwt:Issuer"] = "ECommerce.Tests";
         configuration["Jwt:Audience"] = "ECommerce.Tests";
         configuration["Jwt:ExpirationMinutes"] = "60";
@@ -391,6 +437,9 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         services.AddLogging();
         services.AddApplication();
         services.AddInfrastructure(configuration);
+
+        services.Configure<OrderExpirationOptions>(
+            configuration.GetSection(OrderExpirationOptions.SectionName));
 
         // Replace the production random Gateway with a deterministic test double.
         services.AddScoped<IPaymentGateway>(_ => gateway);

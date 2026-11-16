@@ -33,15 +33,8 @@ public sealed class CancelMyOrderCommandHandler(
         }
 
         // The domain aggregate enforces that only Pending/AwaitingPayment orders
-        // with Pending seller groups can be cancelled.
-        order.Cancel();
-
-        foreach (var payment in order.Payments.Where(payment => payment.Status == PaymentStatus.Pending))
-        {
-            payment.Cancel();
-        }
-
-        var restoration = await OrderInventoryRestorer.RestoreAsync(
+        // with Pending seller groups can be canceled.
+        var restoration = await OrderCancellationProcessor.CancelAndRestoreAsync(
             order,
             sellerOfferRepository,
             cancellationToken);

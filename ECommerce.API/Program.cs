@@ -1,9 +1,11 @@
 using System.Net;
 using System.Threading.RateLimiting;
+using ECommerce.API.BackgroundServices;
 using ECommerce.API.HealthChecks;
 using ECommerce.API.Middleware;
 using ECommerce.Application;
 using ECommerce.Application.Features.Payments.CompleteMockPayment;
+using ECommerce.Application.Options;
 using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Persistence;
@@ -34,6 +36,7 @@ builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
     builder.Configuration,
     enableMockPaymentGateway: builder.Environment.IsDevelopment());
+builder.Services.AddHostedService<OrderExpirationBackgroundService>();
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -99,6 +102,15 @@ builder.Services.AddHealthChecks()
     .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 
 builder.Services.AddAuthorization();
+
+builder.Services
+    .AddOptions<OrderExpirationOptions>()
+    .Bind(builder.Configuration.GetSection(OrderExpirationOptions.SectionName))
+    .Validate(options => options.PaymentWindowMinutes > 0,
+        "PaymentWindowMinutes must be greater than zero.")
+    .Validate(options => options.ScanIntervalSeconds > 0,
+        "ScanIntervalSeconds must be greater than zero.")
+    .ValidateOnStart();
 
 var app = builder.Build();
 

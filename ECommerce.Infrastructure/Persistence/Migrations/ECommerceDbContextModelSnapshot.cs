@@ -166,51 +166,6 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                     b.ToTable("CartItems");
                 });
 
-            modelBuilder.Entity("ECommerce.Domain.Entities.Wishlist", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId")
-                        .IsUnique();
-
-                    b.ToTable("Wishlists");
-                });
-
-            modelBuilder.Entity("ECommerce.Domain.Entities.WishlistItem", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("ProductId")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("WishlistId")
-                        .HasColumnType("uuid");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ProductId");
-
-                    b.HasIndex("WishlistId", "ProductId")
-                        .IsUnique();
-
-                    b.ToTable("WishlistItems");
-                });
-
             modelBuilder.Entity("ECommerce.Domain.Entities.Category", b =>
                 {
                     b.Property<Guid>("Id")
@@ -412,6 +367,10 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)");
 
+                    b.Property<string>("Authority")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -431,6 +390,15 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                     b.Property<int>("PaymentMethod")
                         .HasColumnType("integer");
 
+                    b.Property<long?>("RefId")
+                        .HasColumnType("bigint");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -443,10 +411,25 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Authority")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Payments_Authority")
+                        .HasFilter("\"Authority\" IS NOT NULL");
+
                     b.HasIndex("OrderId");
+
+                    b.HasIndex("RefId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Payments_RefId")
+                        .HasFilter("\"RefId\" IS NOT NULL");
 
                     b.HasIndex("TransactionId")
                         .IsUnique();
+
+                    b.HasIndex(new[] { "OrderId" }, "IX_Payments_OrderId_Active")
+                        .IsUnique()
+                        .HasDatabaseName("IX_Payments_OrderId_Active")
+                        .HasFilter("\"Status\" IN (1, 2)");
 
                     b.ToTable("Payments");
                 });
@@ -646,6 +629,51 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                         .HasFilter("\"Status\" = 1");
 
                     b.ToTable("SellerRequests");
+                });
+
+            modelBuilder.Entity("ECommerce.Domain.Entities.Wishlist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId")
+                        .IsUnique();
+
+                    b.ToTable("Wishlists");
+                });
+
+            modelBuilder.Entity("ECommerce.Domain.Entities.WishlistItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ProductId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WishlistId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProductId");
+
+                    b.HasIndex("WishlistId", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("WishlistItems");
                 });
 
             modelBuilder.Entity("ECommerce.Infrastructure.Identity.ApplicationUser", b =>
@@ -888,32 +916,6 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("ECommerce.Domain.Entities.Wishlist", b =>
-                {
-                    b.HasOne("ECommerce.Infrastructure.Identity.ApplicationUser", null)
-                        .WithOne()
-                        .HasForeignKey("ECommerce.Domain.Entities.Wishlist", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("ECommerce.Domain.Entities.WishlistItem", b =>
-                {
-                    b.HasOne("ECommerce.Domain.Entities.Product", "Product")
-                        .WithMany()
-                        .HasForeignKey("ProductId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("ECommerce.Domain.Entities.Wishlist", null)
-                        .WithMany("Items")
-                        .HasForeignKey("WishlistId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Product");
-                });
-
             modelBuilder.Entity("ECommerce.Domain.Entities.Category", b =>
                 {
                     b.HasOne("ECommerce.Domain.Entities.Category", "ParentCategory")
@@ -1039,6 +1041,32 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("ECommerce.Domain.Entities.Wishlist", b =>
+                {
+                    b.HasOne("ECommerce.Infrastructure.Identity.ApplicationUser", null)
+                        .WithOne()
+                        .HasForeignKey("ECommerce.Domain.Entities.Wishlist", "UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("ECommerce.Domain.Entities.WishlistItem", b =>
+                {
+                    b.HasOne("ECommerce.Domain.Entities.Product", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("ECommerce.Domain.Entities.Wishlist", null)
+                        .WithMany("Items")
+                        .HasForeignKey("WishlistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Product");
+                });
+
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<System.Guid>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole<System.Guid>", null)
@@ -1095,11 +1123,6 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                     b.Navigation("Items");
                 });
 
-            modelBuilder.Entity("ECommerce.Domain.Entities.Wishlist", b =>
-                {
-                    b.Navigation("Items");
-                });
-
             modelBuilder.Entity("ECommerce.Domain.Entities.Category", b =>
                 {
                     b.Navigation("Children");
@@ -1127,6 +1150,11 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("ECommerce.Domain.Entities.ProductVariant", b =>
                 {
                     b.Navigation("SellerOffers");
+                });
+
+            modelBuilder.Entity("ECommerce.Domain.Entities.Wishlist", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

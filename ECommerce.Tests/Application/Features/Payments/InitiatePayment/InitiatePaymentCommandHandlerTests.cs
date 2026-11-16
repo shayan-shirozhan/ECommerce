@@ -1,8 +1,8 @@
-
 using ECommerce.Application;
 using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Payments.InitiatePayment;
+using ECommerce.Application.Options;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Domain.Exceptions;
@@ -203,7 +203,7 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Handle_should_reject_order_that_is_already_awaiting_payment()
+    public async Task Handle_should_reject_order_that_has_an_active_payment()
     {
         // Arrange
         var userId = Guid.NewGuid();
@@ -258,6 +258,95 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
             Assert.That(
                 persistedOrder.Payments.Single().Id,
                 Is.EqualTo(existingPayment.Id));
+        });
+    }
+
+
+    [Test]
+    public async Task Handle_should_create_a_new_payment_after_previous_attempt_failed()
+    {
+        var userId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = CreateOrderWithItem(userId, sellerId);
+        var firstPayment = order.InitiatePayment();
+        firstPayment.MarkFailed();
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider(userId);
+
+        var response = await SendAsync(provider, order.Id);
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == order.Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments, Has.Count.EqualTo(2));
+            Assert.That(persistedOrder.Payments.Single(payment => payment.Id == firstPayment.Id).Status,
+                Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(persistedOrder.Payments.Single(payment => payment.Id == response.PaymentId).Status,
+                Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(response.PaymentId, Is.Not.EqualTo(firstPayment.Id));
+            Assert.That(response.OrderId, Is.EqualTo(order.Id));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_reject_retry_when_order_payment_window_has_expired()
+    {
+        var userId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+
+        var order = CreateOrderWithItem(userId, sellerId);
+
+        var previousPayment = order.InitiatePayment();
+        previousPayment.MarkFailed();
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
+
+            context.Orders.Add(order);
+
+            context.Entry(order).Property(x => x.CreatedAt).CurrentValue =
+                DateTime.UtcNow.AddMinutes(-31);
+
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider(userId);
+
+        Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await SendAsync(provider, order.Id));
+
+        await using var verificationContext = CreateDbContext();
+
+        var persistedOrder = await verificationContext.Orders
+            .Include(x => x.Payments)
+            .SingleAsync(x => x.Id == order.Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments, Has.Count.EqualTo(1));
+            Assert.That(
+                persistedOrder.Payments.Single().Status,
+                Is.EqualTo(PaymentStatus.Failed));
         });
     }
 
@@ -374,6 +463,7 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
         var configuration = new ConfigurationManager();
 
         configuration["ConnectionStrings:ECommerceDb"] = ConnectionString;
+        configuration["OrderExpiration:PaymentWindowMinutes"] = "30";
         configuration["Jwt:Issuer"] = "ECommerce.Tests";
         configuration["Jwt:Audience"] = "ECommerce.Tests";
         configuration["Jwt:ExpirationMinutes"] = "60";
@@ -384,6 +474,9 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
         services.AddLogging();
         services.AddApplication();
         services.AddInfrastructure(configuration);
+
+        services.Configure<OrderExpirationOptions>(
+            configuration.GetSection(OrderExpirationOptions.SectionName));
 
         services.AddScoped<ICurrentUser>(
             _ => new TestCurrentUser(currentUserId));

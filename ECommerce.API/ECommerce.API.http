@@ -754,7 +754,7 @@ Authorization: Bearer {{CustomerToken}}
 ### Initiate Payment (Customer)
 
 # Replace OrderId with an order owned by the authenticated customer.
-# The order must be in Pending status and have a positive total amount.
+# The order must be Pending, or AwaitingPayment after a failed/cancelled attempt, and have a positive total amount.
 
 POST {{ECommerce_API_HostAddress}}/api/payments/orders/{{OrderId}}/initiate
 Accept: application/json

@@ -6,10 +6,8 @@ namespace ECommerce.Domain.Entities;
 
 public class Payment : AuditableEntity
 {
-    //ctor's
     private Payment()
     {
-
     }
 
     private Payment(Guid orderId, decimal amount, PaymentMethod paymentMethod)
@@ -26,39 +24,63 @@ public class Payment : AuditableEntity
         Status = PaymentStatus.Pending;
     }
 
-
-    //prop's
     public Guid OrderId { get; private set; }
+    public uint RowVersion { get; private set; }
     public decimal Amount { get; private set; }
     public PaymentStatus Status { get; private set; }
     public PaymentMethod PaymentMethod { get; private set; }
+    public string? Authority { get; private set; }
+    public long? RefId { get; private set; }
     public string? TransactionId { get; private set; }
     public string? GatewayReference { get; private set; }
     public DateTime? PaidAt { get; private set; }
     public DateTime? FailedAt { get; private set; }
 
-
-    //method's
     public static Payment Create(Guid orderId, decimal amount, PaymentMethod paymentMethod)
     {
         return new Payment(orderId, amount, paymentMethod);
     }
 
-    public void MarkSuccessful(string transactionId, string? gatewayReference = null)
+    public void SetAuthority(string authority)
+    {
+        if (Status != PaymentStatus.Pending)
+            throw new DomainException("Only pending payments can receive a gateway authority.");
+
+        if (string.IsNullOrWhiteSpace(authority))
+            throw new DomainException("Payment authority is required.");
+
+        if (!string.IsNullOrWhiteSpace(Authority))
+            throw new DomainException("Payment authority has already been assigned.");
+
+        Authority = authority.Trim();
+    }
+
+    public void MarkSuccessful(
+        string? transactionId = null,
+        string? gatewayReference = null,
+        long? refId = null)
     {
         if (Status != PaymentStatus.Pending)
             throw new DomainException("Only pending payment can be marked as successful.");
 
-        if (string.IsNullOrWhiteSpace(transactionId))
-            throw new DomainException("Transaction ID is required.");
+        if (string.IsNullOrWhiteSpace(transactionId) &&
+            string.IsNullOrWhiteSpace(gatewayReference) &&
+            !refId.HasValue)
+        {
+            throw new DomainException("A payment reference is required.");
+        }
+
+        if (refId is <= 0)
+            throw new DomainException("Payment reference ID must be greater than zero.");
 
         Status = PaymentStatus.Successful;
-        TransactionId = transactionId;
-        GatewayReference = gatewayReference;
+        TransactionId = string.IsNullOrWhiteSpace(transactionId) ? null : transactionId.Trim();
+        GatewayReference = string.IsNullOrWhiteSpace(gatewayReference) ? null : gatewayReference.Trim();
+        RefId = refId;
         PaidAt = DateTime.UtcNow;
     }
 
-    public void MockFailed()
+    public void MarkFailed()
     {
         if (Status != PaymentStatus.Pending)
             throw new DomainException("Only pending payment can be marked as failed.");
