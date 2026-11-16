@@ -1,5 +1,6 @@
 using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Exceptions;
+using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Seed;
@@ -7,6 +8,7 @@ using ECommerce.Tests.Infrastructure.Fixtures;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
 
 namespace ECommerce.Tests.Infrastructure.Identity;
 
@@ -99,24 +101,210 @@ public sealed class IdentityRegistrationTests : PostgresTestBase
         Assert.That(await userManager.FindByIdAsync(created.Id.ToString()), Is.Null);
     }
 
+
+    [Test]
+    public async Task Authenticate_should_increment_failed_access_count_for_invalid_password()
+    {
+        using var provider = CreateIdentityServiceProvider();
+        using var scope = provider.CreateScope();
+        var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var email = $"lockout-count-{Guid.NewGuid():N}@test.com";
+
+        var created = await identityService.CreateUserAsync(
+            email,
+            "Password123!",
+            "Test",
+            "Login",
+            CancellationToken.None);
+
+        var result = await identityService.AuthenticateAsync(
+            email,
+            "WrongPassword123!",
+            CancellationToken.None);
+
+        var persisted = await userManager.FindByIdAsync(created.Id.ToString());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Is.Null);
+            Assert.That(persisted, Is.Not.Null);
+            Assert.That(persisted!.AccessFailedCount, Is.EqualTo(1));
+            Assert.That(persisted.LockoutEnd, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task Authenticate_should_lock_account_after_maximum_failed_attempts()
+    {
+        using var provider = CreateIdentityServiceProvider();
+        using var scope = provider.CreateScope();
+        var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var email = $"lockout-threshold-{Guid.NewGuid():N}@test.com";
+
+        var created = await identityService.CreateUserAsync(
+            email,
+            "Password123!",
+            "Test",
+            "Lockout",
+            CancellationToken.None);
+
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var result = await identityService.AuthenticateAsync(
+                email,
+                "WrongPassword123!",
+                CancellationToken.None);
+
+            Assert.That(result, Is.Null);
+        }
+
+        var persisted = await userManager.FindByIdAsync(created.Id.ToString());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persisted, Is.Not.Null);
+            // ASP.NET Core Identity resets the counter when the threshold triggers lockout.
+            Assert.That(persisted!.AccessFailedCount, Is.Zero);
+            Assert.That(persisted!.LockoutEnd, Is.Not.Null);
+        });
+        Assert.That(await userManager.IsLockedOutAsync(persisted!), Is.True);
+
+        var correctPasswordResult = await identityService.AuthenticateAsync(
+            email,
+            "Password123!",
+            CancellationToken.None);
+
+        Assert.That(correctPasswordResult, Is.Null);
+    }
+
+    [Test]
+    public async Task Authenticate_should_reset_failed_attempt_count_after_successful_login()
+    {
+        using var provider = CreateIdentityServiceProvider();
+        using var scope = provider.CreateScope();
+        var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var email = $"lockout-reset-{Guid.NewGuid():N}@test.com";
+
+        var created = await identityService.CreateUserAsync(
+            email,
+            "Password123!",
+            "Test",
+            "Reset",
+            CancellationToken.None);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await identityService.AuthenticateAsync(
+                email,
+                "WrongPassword123!",
+                CancellationToken.None);
+        }
+
+        var authenticated = await identityService.AuthenticateAsync(
+            email,
+            "Password123!",
+            CancellationToken.None);
+        var persisted = await userManager.FindByIdAsync(created.Id.ToString());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(authenticated, Is.Not.Null);
+            Assert.That(authenticated!.Id, Is.EqualTo(created.Id));
+            Assert.That(persisted, Is.Not.Null);
+            Assert.That(persisted!.AccessFailedCount, Is.Zero);
+            Assert.That(persisted.LockoutEnd, Is.Null);
+        });
+    }
+
+    [Test]
+    public async Task Initial_admin_bootstrap_should_create_only_one_admin_and_never_promote_an_existing_account()
+    {
+        using var provider = CreateIdentityServiceProvider();
+        using var scope = provider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+        var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
+        var existingAccountEmail = $"existing-account-{Guid.NewGuid():N}@test.com";
+        var firstAdminEmail = $"first-admin-{Guid.NewGuid():N}@test.com";
+
+        await identityService.CreateUserAsync(
+            existingAccountEmail,
+            "Password123!",
+            "Existing",
+            "Customer",
+            CancellationToken.None);
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["BootstrapAdmin:Email"] = existingAccountEmail,
+                ["BootstrapAdmin:Password"] = "AdminPassword123!",
+                ["BootstrapAdmin:FirstName"] = "Initial",
+                ["BootstrapAdmin:LastName"] = "Administrator"
+            })
+            .Build();
+
+        var existingAccountAttempt = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await InitialAdminBootstrapper.CreateAsync(
+                dbContext,
+                userManager,
+                roleManager,
+                configuration,
+                CancellationToken.None));
+
+        Assert.That(existingAccountAttempt!.Message, Does.Contain("already belongs"));
+
+        var existingUser = await userManager.FindByEmailAsync(existingAccountEmail);
+        Assert.That(existingUser, Is.Not.Null);
+        Assert.That(await userManager.IsInRoleAsync(existingUser!, ApplicationRoles.Admin), Is.False);
+
+        configuration["BootstrapAdmin:Email"] = firstAdminEmail;
+
+        await InitialAdminBootstrapper.CreateAsync(
+            dbContext,
+            userManager,
+            roleManager,
+            configuration,
+            CancellationToken.None);
+
+        var admin = await userManager.FindByEmailAsync(firstAdminEmail);
+        Assert.That(admin, Is.Not.Null);
+        Assert.That(await userManager.CheckPasswordAsync(admin!, "AdminPassword123!"), Is.True);
+        Assert.That(await userManager.IsInRoleAsync(admin!, ApplicationRoles.Admin), Is.True);
+        Assert.That(admin!.EmailConfirmed, Is.True);
+
+        var secondAttempt = Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await InitialAdminBootstrapper.CreateAsync(
+                dbContext,
+                userManager,
+                roleManager,
+                configuration,
+                CancellationToken.None));
+
+        Assert.That(secondAttempt!.Message, Does.Contain("already exists"));
+        Assert.That((await userManager.GetUsersInRoleAsync(ApplicationRoles.Admin)), Has.Count.EqualTo(1));
+    }
+
     private ServiceProvider CreateIdentityServiceProvider()
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddDbContext<ECommerceDbContext>(options => options.UseNpgsql(ConnectionString));
-        services.AddIdentityCore<ApplicationUser>(options =>
+
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                options.User.RequireUniqueEmail = true;
-                options.Password.RequiredLength = 8;
-                options.Password.RequireDigit = true;
-                options.Password.RequireLowercase = true;
-                options.Password.RequireUppercase = true;
-                options.Password.RequireNonAlphanumeric = true;
+                ["ConnectionStrings:ECommerceDb"] = ConnectionString,
+                ["Jwt:Issuer"] = "ECommerce.Tests",
+                ["Jwt:Audience"] = "ECommerce.Tests",
+                ["Jwt:SecretKey"] = new string('S', 64)
             })
-            .AddRoles<IdentityRole<Guid>>()
-            .AddEntityFrameworkStores<ECommerceDbContext>();
-        services.AddScoped<IIdentityService, IdentityService>();
-        services.AddScoped<IUserRoleService, UserRoleService>();
+            .Build();
+
+        services.AddInfrastructure(configuration);
 
         return services.BuildServiceProvider();
     }

@@ -21,11 +21,28 @@
 @SellerOfferId = YOUR_SELLER_OFFER_ID
 @SellerRequestId = YOUR_SELLER_REQUEST_ID
 @OrderId = YOUR_ORDER_ID
+@PaymentId = YOUR_PAYMENT_ID
 @AddressId = YOUR_ADDRESS_ID
 
 # Get the current RowVersion from GET /api/seller-offers/{id}
 
 @SellerOfferRowVersion = YOUR_CURRENT_ROW_VERSION
+
+# -------------------------------------------------------------------
+
+# Health checks
+
+# -------------------------------------------------------------------
+
+### Liveness (process only)
+GET {{ECommerce_API_HostAddress}}/health/live
+Accept: application/json
+
+### Readiness (includes PostgreSQL connectivity)
+GET {{ECommerce_API_HostAddress}}/health/ready
+Accept: application/json
+
+###
 
 # -------------------------------------------------------------------
 
@@ -740,6 +757,15 @@ Authorization: Bearer {{CustomerToken}}
 # The order must be in Pending status and have a positive total amount.
 
 POST {{ECommerce_API_HostAddress}}/api/payments/orders/{{OrderId}}/initiate
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
+### Complete Mock Payment (Development only)
+# This endpoint is not mapped when ASPNETCORE_ENVIRONMENT=Production.
+# Replace PaymentId with the id returned by the initiate endpoint.
+POST {{ECommerce_API_HostAddress}}/api/payments/{{PaymentId}}/complete-mock
 Accept: application/json
 Authorization: Bearer {{CustomerToken}}
 

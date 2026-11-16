@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Exceptions;
 using Microsoft.AspNetCore.Identity;
 
@@ -16,8 +16,19 @@ internal sealed class IdentityService(UserManager<ApplicationUser> userManager) 
         var user = await userManager.FindByEmailAsync(email);
         if (user is null) return null;
 
+        if (await userManager.IsLockedOutAsync(user))
+            return null;
+
         var passwordValid = await userManager.CheckPasswordAsync(user, password);
-        if (!passwordValid) return null;
+        if (!passwordValid)
+        {
+            await userManager.AccessFailedAsync(user);
+            return null;
+        }
+
+        var resetAccessFailedCountResult = await userManager.ResetAccessFailedCountAsync(user);
+        if (!resetAccessFailedCountResult.Succeeded)
+            return null;
 
         if (string.IsNullOrWhiteSpace(user.Email)) return null;
 
