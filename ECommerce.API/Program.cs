@@ -1,53 +1,147 @@
+using System.Net;
+using System.Threading.RateLimiting;
+using ECommerce.API.HealthChecks;
 using ECommerce.API.Middleware;
 using ECommerce.Application;
+using ECommerce.Application.Features.Payments.CompleteMockPayment;
 using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Seed;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Serilog;
 
-var builder = WebApplication.CreateBuilder(args);
+var runInitialAdminBootstrap = args.Contains("--bootstrap-admin", StringComparer.OrdinalIgnoreCase);
+var builderArgs = args
+    .Where(argument => !string.Equals(argument, "--bootstrap-admin", StringComparison.OrdinalIgnoreCase))
+    .ToArray();
+var builder = WebApplication.CreateBuilder(builderArgs);
 
-// Add services to the container.
+builder.Host.UseSerilog((context, services, loggerConfiguration) =>
+    loggerConfiguration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext());
 
 builder.Services.AddControllers();
-
 builder.Services.AddOpenApi();
-
 builder.Services.AddApplication();
+builder.Services.AddInfrastructure(
+    builder.Configuration,
+    enableMockPaymentGateway: builder.Environment.IsDevelopment());
 
-builder.Services.AddInfrastructure(builder.Configuration);
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? [];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        if (allowedOrigins.Length > 0)
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+    });
+});
+
+var trustedProxyAddresses = builder.Configuration
+    .GetSection("ForwardedHeaders:KnownProxies")
+    .Get<string[]>() ?? [];
+
+var parsedTrustedProxyAddresses = trustedProxyAddresses.Select(address =>
+    IPAddress.TryParse(address, out var parsedAddress)
+        ? parsedAddress
+        : throw new InvalidOperationException($"ForwardedHeaders:KnownProxies contains an invalid IP address: '{address}'."))
+    .ToArray();
+
+if (parsedTrustedProxyAddresses.Length > 0)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+
+        foreach (var address in parsedTrustedProxyAddresses)
+            options.KnownProxies.Add(address);
+    });
+}
+
+var authPermitLimit = builder.Configuration.GetValue("RateLimiting:Auth:PermitLimit", 10);
+var authWindowSeconds = builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60);
+
+if (authPermitLimit <= 0)
+    throw new InvalidOperationException("RateLimiting:Auth:PermitLimit must be greater than zero.");
+
+if (authWindowSeconds <= 0)
+    throw new InvalidOperationException("RateLimiting:Auth:WindowSeconds must be greater than zero.");
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", httpContext =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = authPermitLimit,
+                Window = TimeSpan.FromSeconds(authWindowSeconds),
+                QueueLimit = 0,
+                AutoReplenishment = true
+            }));
+});
+
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// This command is deliberately separate from normal startup and is only available in Production.
+// Supply its credentials through BootstrapAdmin__* environment variables, never command-line args.
+if (runInitialAdminBootstrap)
+{
+    if (!app.Environment.IsProduction())
+        throw new InvalidOperationException("--bootstrap-admin can only run when ASPNETCORE_ENVIRONMENT=Production.");
 
+    using var bootstrapScope = app.Services.CreateScope();
+    var bootstrapServices = bootstrapScope.ServiceProvider;
+
+    await InitialAdminBootstrapper.CreateAsync(
+        bootstrapServices.GetRequiredService<ECommerceDbContext>(),
+        bootstrapServices.GetRequiredService<UserManager<ApplicationUser>>(),
+        bootstrapServices.GetRequiredService<RoleManager<IdentityRole<Guid>>>(),
+        app.Configuration);
+
+    app.Logger.LogInformation("The initial administrator account was created successfully.");
+    return;
+}
+
+// Production migrations are deployed separately. Development remains self-contained.
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
 
-    // Keep local development startup self-contained; production migrations are deployed separately.
     if (app.Environment.IsDevelopment())
         await dbContext.Database.MigrateAsync();
 
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
-
     await DatabaseSeeder.SeedRolesAsync(roleManager);
 
     if (app.Environment.IsDevelopment())
     {
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-
-        await DatabaseSeeder.SeedDevelopmentDataAsync(
-            dbContext,
-            userManager);
+        await DatabaseSeeder.SeedDevelopmentDataAsync(dbContext, userManager);
     }
 }
 
+app.UseForwardedHeaders();
+app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
 if (app.Environment.IsDevelopment())
@@ -59,10 +153,60 @@ if (app.Environment.IsDevelopment())
 if (app.Configuration.GetValue("HttpsRedirection:Enabled", true))
     app.UseHttpsRedirection();
 
+app.UseRouting();
+app.UseCors("Frontend");
+app.UseRateLimiter();
 app.UseAuthentication();
-
 app.UseAuthorization();
 
+Func<HttpContext, HealthReport, Task> healthCheckResponseWriter = async (HttpContext context, HealthReport report) =>
+{
+    context.Response.ContentType = "application/json";
+    await context.Response.WriteAsJsonAsync(new
+    {
+        status = report.Status.ToString(),
+        checks = report.Entries.Select(entry => new
+        {
+            name = entry.Key,
+            status = entry.Value.Status.ToString(),
+            description = entry.Value.Description
+        })
+    });
+};
+
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = _ => false,
+    ResponseWriter = healthCheckResponseWriter
+}).AllowAnonymous();
+
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = healthCheckResponseWriter
+}).AllowAnonymous();
+
 app.MapControllers();
+
+// The mock payment completion endpoint and gateway do not exist outside Development.
+if (app.Environment.IsDevelopment())
+{
+    app.MapPost("/api/payments/{paymentId:guid}/complete-mock",
+        async (Guid paymentId, MediatR.ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(
+                new CompleteMockPaymentCommand(paymentId),
+                cancellationToken);
+
+            return Results.Ok(result);
+        })
+        .RequireAuthorization()
+        .WithTags("Development Payments")
+        .WithName("CompleteMockPayment")
+        .Produces<CompleteMockPaymentResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status409Conflict);
+}
 
 app.Run();

@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
@@ -17,7 +17,10 @@ namespace ECommerce.Infrastructure;
 
 public static class DependencyInjection
 {
-    public static void AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+    public static void AddInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration,
+        bool enableMockPaymentGateway = false)
     {
         var connectionString = configuration.GetConnectionString("ECommerceDb") ??
                                throw new InvalidOperationException("ECommerceDb is not configured");
@@ -31,6 +34,10 @@ public static class DependencyInjection
                 options.Password.RequireLowercase = true;
                 options.Password.RequireUppercase = true;
                 options.Password.RequireNonAlphanumeric = true;
+
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddRoles<IdentityRole<Guid>>()
             .AddEntityFrameworkStores<ECommerceDbContext>();
@@ -83,6 +90,7 @@ public static class DependencyInjection
         services.AddScoped<ICartRepository, CartRepository>();
         services.AddScoped<IWishlistRepository, WishlistRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
-        services.AddScoped<IPaymentGateway, MockPaymentGateway>();
+        if (enableMockPaymentGateway)
+            services.AddScoped<IPaymentGateway, MockPaymentGateway>();
     }
 }

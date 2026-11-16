@@ -1,13 +1,15 @@
-﻿using ECommerce.API.Contracts.Authentication;
+using ECommerce.API.Contracts.Authentication;
 using ECommerce.Application.Features.Authentication.Login;
 using ECommerce.Application.Features.Authentication.Register;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace ECommerce.API.Controllers;
 
 [ApiController]
 [Route("api/auth")]
+[EnableRateLimiting("auth")]
 public class AuthController(ISender sender) : ControllerBase
 {
     [HttpPost("login")]
