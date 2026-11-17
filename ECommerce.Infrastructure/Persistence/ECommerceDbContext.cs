@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Persistence;
+using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Domain.Entities;
 using ECommerce.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
@@ -29,6 +29,7 @@ public class ECommerceDbContext(DbContextOptions<ECommerceDbContext> options)
     public DbSet<OrderGroup> OrderGroups => Set<OrderGroup>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
 
     protected override void OnModelCreating(ModelBuilder builder)
