@@ -105,6 +105,66 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
     }
 
     [Test]
+    public async Task Handle_should_keep_payment_pending_when_verification_outcome_is_indeterminate()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(authority);
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayVerificationResult(
+                false,
+                false,
+                null,
+                "503",
+                "Provider temporarily unavailable.",
+                IsIndeterminate: true));
+        using var provider = CreateProvider(gateway);
+
+        Assert.ThrowsAsync<PaymentGatewayException>(
+            async () => await SendAsync(provider, seeded.PaymentId, authority, "OK"));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(order => order.Payments)
+            .SingleAsync(order => order.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(persistedOrder.Payments.Single().RefId, Is.Null);
+            Assert.That(persistedOrder.Payments.Single().LastVerificationAttemptedAt, Is.Not.Null);
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_not_repeat_verification_while_previous_attempt_is_within_retry_delay()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(
+            authority,
+            DateTime.UtcNow.AddSeconds(-30));
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayVerificationResult(true, false, 555123));
+        using var provider = CreateProvider(gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await SendAsync(provider, seeded.PaymentId, authority, "OK"));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(order => order.Payments)
+            .SingleAsync(order => order.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task Handle_should_accept_provider_code_101_as_an_idempotent_verified_payment()
     {
         var authority = $"A{Guid.NewGuid():N}";
@@ -196,7 +256,9 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         });
     }
 
-    private async Task<SeededPayment> SeedZarinPalPaymentAsync(string authority)
+    private async Task<SeededPayment> SeedZarinPalPaymentAsync(
+        string authority,
+        DateTime? lastVerificationAttemptedAt = null)
     {
         var userId = Guid.NewGuid();
         var sellerId = Guid.NewGuid();
@@ -204,6 +266,8 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         var order = CreateOrderWithItem(userId, sellerId);
         var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
         payment.SetAuthority(authority);
+        if (lastVerificationAttemptedAt.HasValue)
+            payment.MarkVerificationAttempted(lastVerificationAttemptedAt.Value);
 
         await using (var context = CreateDbContext())
         {

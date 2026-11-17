@@ -25,7 +25,10 @@ public interface IOrderRepository
     Task<Order?> GetByIdForSellerForUpdateAsync(Guid orderId, Guid sellerId,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(DateTime cutoffUtc, int take,
+    Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(
+        DateTime cutoffUtc,
+        DateTime verificationRetryCutoffUtc,
+        int take,
         CancellationToken cancellationToken = default);
 
     Task<Order?> GetByIdForExpirationAsync(Guid orderId, DateTime cutoffUtc,

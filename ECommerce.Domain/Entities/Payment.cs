@@ -31,6 +31,13 @@ public class Payment : AuditableEntity
     public PaymentStatus Status { get; private set; }
     public PaymentMethod PaymentMethod { get; private set; }
     public string? Authority { get; private set; }
+    /// <summary>
+    /// The latest time a request to create a ZarinPal checkout session was started.
+    /// A pending payment without an authority can be retried after the request lease expires.
+    /// </summary>
+    public DateTime? LastGatewayRequestStartedAt { get; private set; }
+    /// <summary>The latest time verification of this ZarinPal payment was attempted.</summary>
+    public DateTime? LastVerificationAttemptedAt { get; private set; }
     public long? RefId { get; private set; }
     public string? TransactionId { get; private set; }
     public string? GatewayReference { get; private set; }
@@ -40,6 +47,40 @@ public class Payment : AuditableEntity
     public static Payment Create(Guid orderId, decimal amount, PaymentMethod paymentMethod)
     {
         return new Payment(orderId, amount, paymentMethod);
+    }
+
+    public void MarkGatewayRequestStarted(DateTime startedAtUtc)
+    {
+        if (PaymentMethod != ECommerce.Domain.Enums.PaymentMethod.ZarinPal)
+            throw new DomainException("Only ZarinPal payments can start a gateway request.");
+
+        if (Status != PaymentStatus.Pending)
+            throw new DomainException("Only pending payments can start a gateway request.");
+
+        if (!string.IsNullOrWhiteSpace(Authority))
+            throw new DomainException("A gateway request cannot be started after an authority is assigned.");
+
+        if (startedAtUtc.Kind != DateTimeKind.Utc)
+            throw new DomainException("Gateway request start time must be UTC.");
+
+        LastGatewayRequestStartedAt = startedAtUtc;
+    }
+
+    public void MarkVerificationAttempted(DateTime attemptedAtUtc)
+    {
+        if (PaymentMethod != ECommerce.Domain.Enums.PaymentMethod.ZarinPal)
+            throw new DomainException("Only ZarinPal payments can be verified through a payment gateway.");
+
+        if (Status != PaymentStatus.Pending)
+            throw new DomainException("Only pending payments can be verified.");
+
+        if (string.IsNullOrWhiteSpace(Authority))
+            throw new DomainException("A payment authority is required before verification.");
+
+        if (attemptedAtUtc.Kind != DateTimeKind.Utc)
+            throw new DomainException("Payment verification attempt time must be UTC.");
+
+        LastVerificationAttemptedAt = attemptedAtUtc;
     }
 
     public void SetAuthority(string authority)

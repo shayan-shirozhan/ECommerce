@@ -5,4 +5,5 @@ public sealed record PaymentGatewayVerificationResult(
     bool IsAlreadyVerified,
     long? RefId,
     string? ErrorCode = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    bool IsIndeterminate = false);

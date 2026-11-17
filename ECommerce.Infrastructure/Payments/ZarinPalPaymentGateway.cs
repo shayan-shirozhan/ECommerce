@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ECommerce.Application.Abstractions.Payments;
@@ -47,13 +48,33 @@ internal sealed class ZarinPalPaymentGateway(
             payload,
             cancellationToken);
 
+        if (IsTransientHttpStatusCode(response.StatusCode))
+        {
+            throw new PaymentGatewayException(
+                "ZarinPal did not provide a definitive response to the payment request. " +
+                "The payment attempt remains pending and can be retried after the request lease expires.");
+        }
+
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         var envelope = ParseEnvelope(body);
 
-        if (response.IsSuccessStatusCode &&
-            envelope.DataCode == 100 &&
-            !string.IsNullOrWhiteSpace(envelope.Authority))
+        if (response.IsSuccessStatusCode && envelope.DataCode == 100)
         {
+            if (string.IsNullOrWhiteSpace(envelope.Authority))
+            {
+                logger.LogWarning(
+                    "ZarinPal returned a successful request code without an authority for payment {PaymentId}; outcome remains indeterminate.",
+                    paymentId);
+
+                return new PaymentGatewayRequestResult(
+                    false,
+                    null,
+                    null,
+                    "100",
+                    "The provider did not return the authority required to continue checkout.",
+                    IsIndeterminate: true);
+            }
+
             var paymentUrl = GetPaymentUrl(envelope.Authority);
 
             logger.LogInformation(
@@ -66,18 +87,35 @@ internal sealed class ZarinPalPaymentGateway(
                 paymentUrl);
         }
 
+        if (envelope.DataCode is null && envelope.ErrorCode is null)
+        {
+            throw new PaymentGatewayException(
+                "ZarinPal returned an incomplete response to the payment request. " +
+                "The payment attempt remains pending for recovery.");
+        }
+
+        // A structured 4xx validation/authentication error is a definitive rejection.
+        // A non-success provider code without that explicit rejection envelope is
+        // conservatively treated as indeterminate; it must not close the payment.
+        var isDefinitiveFailure = !response.IsSuccessStatusCode &&
+                                  !string.IsNullOrWhiteSpace(envelope.ErrorCode);
+        var providerCode = envelope.ErrorCode ??
+                           envelope.DataCode?.ToString(CultureInfo.InvariantCulture);
+
         logger.LogWarning(
-            "ZarinPal rejected payment request for payment {PaymentId}. HTTP {StatusCode}, provider code {ProviderCode}.",
+            "ZarinPal payment request did not produce a checkout authority for payment {PaymentId}. HTTP {StatusCode}, provider code {ProviderCode}, indeterminate {IsIndeterminate}.",
             paymentId,
             (int)response.StatusCode,
-            envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture));
+            providerCode,
+            !isDefinitiveFailure);
 
         return new PaymentGatewayRequestResult(
             false,
             null,
             null,
-            envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture),
-            envelope.ErrorMessage ?? "The payment provider rejected the payment request.");
+            providerCode,
+            envelope.ErrorMessage ?? "The payment provider did not confirm checkout-session creation.",
+            IsIndeterminate: !isDefinitiveFailure);
     }
 
     public async Task<PaymentGatewayVerificationResult> VerifyPaymentAsync(
@@ -100,12 +138,34 @@ internal sealed class ZarinPalPaymentGateway(
             payload,
             cancellationToken);
 
+        if (IsTransientHttpStatusCode(response.StatusCode))
+        {
+            logger.LogWarning(
+                "ZarinPal verification returned a transient HTTP status {StatusCode}; payment outcome remains unknown.",
+                (int)response.StatusCode);
+
+            return new PaymentGatewayVerificationResult(
+                false,
+                false,
+                null,
+                ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+                "The payment provider is temporarily unavailable.",
+                IsIndeterminate: true);
+        }
+
         var body = await response.Content.ReadAsStringAsync(cancellationToken);
         var envelope = ParseEnvelope(body);
 
         var isSuccessful = response.IsSuccessStatusCode &&
                            envelope.DataCode is 100 or 101 &&
                            envelope.RefId is > 0;
+        var providerCode = envelope.ErrorCode ??
+                           envelope.DataCode?.ToString(CultureInfo.InvariantCulture);
+        var isDefinitiveFailure = string.Equals(
+            providerCode,
+            "-51",
+            StringComparison.Ordinal);
+        var isIndeterminate = !isSuccessful && !isDefinitiveFailure;
 
         if (isSuccessful)
         {
@@ -116,9 +176,10 @@ internal sealed class ZarinPalPaymentGateway(
         else
         {
             logger.LogWarning(
-                "ZarinPal payment verification failed. HTTP {StatusCode}, provider code {ProviderCode}.",
+                "ZarinPal verification did not produce a definitive success result. HTTP {StatusCode}, provider code {ProviderCode}, indeterminate {IsIndeterminate}.",
                 (int)response.StatusCode,
-                envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture));
+                envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture),
+                isIndeterminate);
         }
 
         return new PaymentGatewayVerificationResult(
@@ -126,7 +187,8 @@ internal sealed class ZarinPalPaymentGateway(
             envelope.DataCode == 101,
             isSuccessful ? envelope.RefId : null,
             envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture),
-            envelope.ErrorMessage ?? envelope.DataMessage);
+            envelope.ErrorMessage ?? envelope.DataMessage,
+            isIndeterminate);
     }
 
     private async Task<HttpResponseMessage> SendAsync(
@@ -159,10 +221,15 @@ internal sealed class ZarinPalPaymentGateway(
         catch (Exception exception) when (exception is HttpRequestException or TaskCanceledException)
         {
             throw new PaymentGatewayException(
-                "The payment provider could not be reached. Please retry the payment.",
+                "The payment provider could not be reached. The operation outcome may be unknown; retry the same operation later.",
                 exception);
         }
     }
+
+    private static bool IsTransientHttpStatusCode(HttpStatusCode statusCode)
+        => statusCode == HttpStatusCode.RequestTimeout ||
+           (int)statusCode == 429 ||
+           (int)statusCode >= 500;
 
     /// <summary>
     /// All application monetary values are stored in Toman. ZarinPal expects Rials,

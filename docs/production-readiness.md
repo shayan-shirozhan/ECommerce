@@ -62,11 +62,16 @@ Required settings when `ZarinPal__Enabled=true`:
 - `ZarinPal__ApiBaseUrl`: provider API root (use the provider's sandbox host for tests).
 - `ZarinPal__PaymentPageBaseUrl`: provider payment-page root, ending in `/pg/StartPay`.
 - `ZarinPal__CallbackUrl`: public HTTPS callback URL. The application appends `paymentId` to it.
+- `ZarinPal__TimeoutSeconds` (optional): HTTP timeout in seconds; it must be between 1 and 59 because the application uses a two-minute lease before retrying a gateway request with an unknown outcome.
 
 The application's canonical monetary unit is **Toman**. `SellerOffer.Price`, order item prices and totals, order totals, and payment amounts are all stored and exchanged by the application in Toman. The ZarinPal v4 adapter converts Toman to Rials (multiply by 10) only when creating or verifying a provider payment. No other application layer should perform this conversion.
 
 Before deploying this change against a database containing existing business data, verify that its stored prices and totals are already interpreted as Toman. If any existing values were entered as Rials, migrate or normalize those values before enabling the gateway; do not try to compensate with a runtime setting. The adapter rejects amounts that cannot be represented as a whole number of Rials.
 
 For the provider flow, `POST /api/payments/orders/{orderId}/initiate` creates a local payment, requests an Authority, stores it, and returns `RedirectUrl`. The public callback uses only the saved payment amount and Authority and verifies them server-to-server before confirming an `OK` payment. A provider callback with `Status=NOK` is recorded as a failed attempt without calling Verify, in line with the ZarinPal integration guide. Failed attempts leave the order awaiting payment and permit a new payment attempt. Verification codes `100` and `101` are treated as successful; the returned `ref_id` is persisted.
+
+A timeout, transport exception, transient HTTP response, malformed provider response, or unknown verification code must not be treated as proof that a payment failed. The local payment remains `Pending`. For an initiation with no saved Authority, the same local `PaymentId` may be retried after its two-minute request lease expires; a recent request is blocked to avoid concurrent provider requests. Verification attempts use a separate persisted two-minute retry delay. The two-minute request lease is deliberately longer than the maximum configured HTTP timeout, leaving a recovery buffer after the HTTP timeout. ZarinPal's v4 request contract does not expose a provider idempotency key in the sample payload, so this local retry mechanism does not claim provider-side idempotency; any Authority from a timed-out request is unknown and is never returned to the client.
+
+Before an expired order with a pending ZarinPal payment that has an Authority releases reserved inventory, the expiration handler verifies the payment again. A confirmed payment moves the order to `Confirmed`; a definitive verification failure allows the order to expire; an indeterminate result keeps the payment, order, and reserved stock intact. The background service retries reconciliation after the persisted verification retry delay.
 
 The mock initiation/completion endpoints are mapped only in Development.

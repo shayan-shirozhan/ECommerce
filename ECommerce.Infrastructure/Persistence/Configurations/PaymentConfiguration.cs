@@ -14,6 +14,10 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.Amount).HasPrecision(18, 2).IsRequired();
         builder.Property(x => x.Status).IsRequired();
         builder.Property(x => x.Authority).HasMaxLength(100);
+        builder.Property(x => x.LastGatewayRequestStartedAt)
+            .HasColumnType("timestamp with time zone");
+        builder.Property(x => x.LastVerificationAttemptedAt)
+            .HasColumnType("timestamp with time zone");
         builder.Property(x => x.TransactionId).HasMaxLength(200);
         builder.Property(x => x.GatewayReference).HasMaxLength(200);
 

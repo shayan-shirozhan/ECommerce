@@ -68,15 +68,42 @@ public sealed class CompleteZarinPalPaymentCommandHandler(
                 ?? throw new PaymentGatewayException(
                     "ZarinPal payment gateway is not configured.");
 
+            if (!PaymentGatewayRetryPolicy.CanRetry(
+                    payment.LastVerificationAttemptedAt,
+                    DateTime.UtcNow))
+            {
+                throw new BusinessRuleException(
+                    "Payment verification was recently attempted. Please retry in two minutes.");
+            }
+
+            payment.MarkVerificationAttempted(DateTime.UtcNow);
+            await unitOfWork.SaveChangesAsync(cancellationToken);
+
             var verification = await paymentGateway.VerifyPaymentAsync(
                 payment.Amount,
                 payment.Authority!,
                 cancellationToken);
 
-            if (verification.IsSuccessful && verification.RefId is > 0)
+            if (verification.IsSuccessful)
             {
+                if (verification.RefId is not > 0)
+                {
+                    throw new PaymentGatewayException(
+                        "ZarinPal reported a successful verification without a valid reference ID. " +
+                        "The payment remains pending for reconciliation.");
+                }
+
                 payment.MarkSuccessful(refId: verification.RefId.Value);
                 order.Confirm();
+            }
+            else if (verification.IsIndeterminate)
+            {
+                // Do not let a timeout, provider outage, malformed response or unknown
+                // provider code turn a potentially paid order into a failed payment.
+                // A repeated callback can safely ask ZarinPal to verify the same authority
+                // after the persisted verification retry delay.
+                throw new PaymentGatewayException(
+                    "ZarinPal could not determine the payment outcome. The payment remains pending.");
             }
             else
             {

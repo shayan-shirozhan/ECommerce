@@ -3,6 +3,7 @@ using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Payments;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace ECommerce.Tests.Infrastructure.Payments;
 
@@ -59,7 +60,21 @@ public sealed class PaymentGatewayRegistrationTests
         Assert.That(provider.GetRequiredService<IPaymentGateway>(), Is.Not.Null);
     }
 
-    private static IConfiguration CreateConfiguration(bool zarinPalEnabled = false)
+    [Test]
+    public void AddInfrastructure_should_reject_zarinpal_timeout_that_reaches_retry_lease()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddInfrastructure(CreateConfiguration(zarinPalEnabled: true, timeoutSeconds: 60));
+        using var provider = services.BuildServiceProvider();
+
+        Assert.Throws<OptionsValidationException>(
+            () => provider.GetRequiredService<IPaymentGateway>());
+    }
+
+    private static IConfiguration CreateConfiguration(
+        bool zarinPalEnabled = false,
+        int timeoutSeconds = 15)
         => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -68,6 +83,7 @@ public sealed class PaymentGatewayRegistrationTests
                 ["Jwt:Audience"] = "ECommerce.Tests",
                 ["Jwt:SecretKey"] = new string('S', 64),
                 ["ZarinPal:Enabled"] = zarinPalEnabled.ToString(),
+                ["ZarinPal:TimeoutSeconds"] = timeoutSeconds.ToString(),
                 ["ZarinPal:MerchantId"] = "11111111-1111-1111-1111-111111111111",
                 ["ZarinPal:ApiBaseUrl"] = "https://sandbox.zarinpal.com",
                 ["ZarinPal:PaymentPageBaseUrl"] = "https://sandbox.zarinpal.com/pg/StartPay",
