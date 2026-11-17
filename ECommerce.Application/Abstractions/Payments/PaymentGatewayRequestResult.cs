@@ -5,4 +5,5 @@ public sealed record PaymentGatewayRequestResult(
     string? Authority,
     string? PaymentUrl,
     string? ErrorCode = null,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    bool IsIndeterminate = false);

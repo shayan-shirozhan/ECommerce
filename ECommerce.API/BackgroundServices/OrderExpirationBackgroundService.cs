@@ -1,3 +1,4 @@
+using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Orders.ExpireOrders;
@@ -52,7 +53,9 @@ public sealed class OrderExpirationBackgroundService(
 
     private async Task ProcessExpiredOrdersAsync(CancellationToken cancellationToken)
     {
-        var cutoffUtc = DateTime.UtcNow.Subtract(_paymentWindow);
+        var nowUtc = DateTime.UtcNow;
+        var cutoffUtc = nowUtc.Subtract(_paymentWindow);
+        var verificationRetryCutoffUtc = nowUtc.Subtract(PaymentGatewayRetryPolicy.RetryDelay);
 
         IReadOnlyList<Guid> expiredOrderIds;
 
@@ -63,6 +66,7 @@ public sealed class OrderExpirationBackgroundService(
 
             expiredOrderIds = await orderRepository.GetExpiredOrderIdsAsync(
                 cutoffUtc,
+                verificationRetryCutoffUtc,
                 MaxOrdersPerCycle,
                 cancellationToken);
         }

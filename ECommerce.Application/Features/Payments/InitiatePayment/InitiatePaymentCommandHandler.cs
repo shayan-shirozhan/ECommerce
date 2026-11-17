@@ -55,14 +55,16 @@ public sealed class InitiatePaymentCommandHandler(
         var activePayment = order.Payments.SingleOrDefault(
             candidate => candidate.Status == PaymentStatus.Pending);
 
+        ECommerce.Domain.Entities.Payment payment;
+
         if (activePayment is not null)
         {
-            // A repeated initiation request must return the existing checkout session
-            // rather than creating another payment request or another provider charge.
+            // A persisted authority is a complete checkout session. Repeated requests
+            // must return it and must not create another provider session.
             if (activePayment.PaymentMethod == PaymentMethod.ZarinPal &&
                 command.PaymentMethod == PaymentMethod.ZarinPal &&
-                !string.IsNullOrWhiteSpace(activePayment.Authority) &&
-                paymentGateway is not null)
+                paymentGateway is not null &&
+                !string.IsNullOrWhiteSpace(activePayment.Authority))
             {
                 return new InitiatePaymentResponse(
                     activePayment.Id,
@@ -73,55 +75,83 @@ public sealed class InitiatePaymentCommandHandler(
                     paymentGateway.GetPaymentUrl(activePayment.Authority));
             }
 
-            throw new BusinessRuleException(
-                "An active payment attempt already exists for this order.");
+            // A request may have reached ZarinPal even when our process did not receive
+            // its response. Keep that payment Pending and retry the same local PaymentId
+            // only after the short lease expires. The provider's v4 request sample does
+            // not define an idempotency key; an unknown authority is never returned to
+            // the client, so an orphaned checkout session cannot be used by this app.
+            // Payment.RowVersion makes the retry claim atomic across concurrent requests.
+            if (activePayment.PaymentMethod != PaymentMethod.ZarinPal ||
+                command.PaymentMethod != PaymentMethod.ZarinPal ||
+                paymentGateway is null)
+            {
+                throw new BusinessRuleException(
+                    "An active payment attempt already exists for this order.");
+            }
+
+            if (!PaymentGatewayRetryPolicy.CanRetry(
+                    activePayment.LastGatewayRequestStartedAt,
+                    DateTime.UtcNow))
+            {
+                throw new BusinessRuleException(
+                    "The payment request is still being processed. Please retry in two minutes.");
+            }
+
+            payment = activePayment;
         }
-
-        var payment = order.InitiatePayment(command.PaymentMethod);
-
-        // Persist our local payment before contacting the provider. The PaymentId is
-        // then available in the callback URL and is the stable idempotency reference
-        // used by this application, even though the provider does not expose a
-        // request-idempotency header in its v4 sample contract.
-        await unitOfWork.SaveChangesAsync(cancellationToken);
+        else
+        {
+            payment = order.InitiatePayment(command.PaymentMethod);
+        }
 
         string? redirectUrl = null;
 
         if (paymentGateway is not null)
         {
-            PaymentGatewayRequestResult gatewayResult;
+            payment.MarkGatewayRequestStarted(DateTime.UtcNow);
+        }
 
-            try
-            {
-                gatewayResult = await paymentGateway.RequestPaymentAsync(
-                    payment.Id,
-                    order.Id,
-                    payment.Amount,
-                    cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                payment.MarkFailed();
-                await unitOfWork.SaveChangesAsync(cancellationToken);
+        // Persist the PaymentId and request lease before contacting the provider.
+        // A failed/ambiguous HTTP exchange can then be retried using this same payment.
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
-                throw new PaymentGatewayException(
-                    "The payment request could not be completed. Please retry the payment.",
-                    exception);
-            }
+        if (paymentGateway is not null)
+        {
+            var gatewayResult = await paymentGateway.RequestPaymentAsync(
+                payment.Id,
+                order.Id,
+                payment.Amount,
+                cancellationToken);
 
-            if (!gatewayResult.IsSuccessful ||
-                string.IsNullOrWhiteSpace(gatewayResult.Authority) ||
-                string.IsNullOrWhiteSpace(gatewayResult.PaymentUrl))
+            if (!gatewayResult.IsSuccessful)
             {
+                if (gatewayResult.IsIndeterminate)
+                {
+                    // Do not close a payment when the provider response does not prove
+                    // that checkout-session creation failed. Keep the same payment for
+                    // a later recovery attempt after the request lease expires.
+                    throw new PaymentGatewayException(
+                        "The payment provider returned an indeterminate request result. " +
+                        "The payment remains pending and can be retried after two minutes.");
+                }
+
+                // A structured provider rejection is definitive: no checkout session
+                // was created, so this attempt can be closed and a new one may be made.
                 payment.MarkFailed();
                 await unitOfWork.SaveChangesAsync(cancellationToken);
 
                 throw new PaymentGatewayException(
                     "The payment provider rejected the payment request. Please retry the payment.");
+            }
+
+            // A success flag without the authority needed for redirect is not a safe,
+            // definitive rejection. Leave the attempt pending for recovery instead.
+            if (string.IsNullOrWhiteSpace(gatewayResult.Authority) ||
+                string.IsNullOrWhiteSpace(gatewayResult.PaymentUrl))
+            {
+                throw new PaymentGatewayException(
+                    "The payment provider returned an incomplete payment request response. " +
+                    "The payment attempt remains pending and can be retried after two minutes.");
             }
 
             payment.SetAuthority(gatewayResult.Authority);

@@ -55,6 +55,45 @@ public sealed class ZarinPalPaymentGatewayTests
             Assert.That(result.IsSuccessful, Is.False);
             Assert.That(result.ErrorCode, Is.EqualTo("-9"));
             Assert.That(result.ErrorMessage, Does.Contain("at least 1000"));
+            Assert.That(result.IsIndeterminate, Is.False);
+        });
+    }
+
+    [Test]
+    public async Task RequestPaymentAsync_should_keep_success_code_without_authority_indeterminate()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent("{\"data\":{\"code\":100},\"errors\":[]}")
+        });
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.RequestPaymentAsync(Guid.NewGuid(), Guid.NewGuid(), 1000m);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.True);
+            Assert.That(result.ErrorCode, Is.EqualTo("100"));
+        });
+    }
+
+    [Test]
+    public async Task RequestPaymentAsync_should_keep_unknown_provider_code_indeterminate()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent("{\"data\":{\"code\":-54},\"errors\":[]}")
+        });
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.RequestPaymentAsync(Guid.NewGuid(), Guid.NewGuid(), 1000m);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.True);
+            Assert.That(result.ErrorCode, Is.EqualTo("-54"));
         });
     }
 
@@ -69,6 +108,84 @@ public sealed class ZarinPalPaymentGatewayTests
 
         Assert.ThrowsAsync<ECommerce.Application.Exceptions.PaymentGatewayException>(
             async () => await gateway.RequestPaymentAsync(Guid.NewGuid(), Guid.NewGuid(), 100m));
+    }
+
+    [TestCase(HttpStatusCode.RequestTimeout)]
+    [TestCase(HttpStatusCode.TooManyRequests)]
+    [TestCase(HttpStatusCode.BadGateway)]
+    [TestCase(HttpStatusCode.ServiceUnavailable)]
+    public void RequestPaymentAsync_should_throw_when_provider_response_is_transient(
+        HttpStatusCode statusCode)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(statusCode)
+        {
+            Content = JsonContent("{\"errors\":{\"message\":\"temporary\"}}")
+        });
+        var gateway = CreateGateway(handler);
+
+        Assert.ThrowsAsync<PaymentGatewayException>(
+            async () => await gateway.RequestPaymentAsync(Guid.NewGuid(), Guid.NewGuid(), 1000m));
+    }
+
+    [TestCase(HttpStatusCode.RequestTimeout)]
+    [TestCase(HttpStatusCode.TooManyRequests)]
+    [TestCase(HttpStatusCode.BadGateway)]
+    [TestCase(HttpStatusCode.ServiceUnavailable)]
+    public async Task VerifyPaymentAsync_should_keep_transient_provider_responses_indeterminate(
+        HttpStatusCode statusCode)
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(statusCode)
+        {
+            Content = JsonContent("not-json")
+        });
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.VerifyPaymentAsync(1000m, "A-authority");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.True);
+            Assert.That(result.ErrorCode, Is.EqualTo(((int)statusCode).ToString()));
+        });
+    }
+
+    [Test]
+    public async Task VerifyPaymentAsync_should_treat_unknown_provider_codes_as_indeterminate()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent("{\"data\":{\"code\":-54},\"errors\":[]}")
+        });
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.VerifyPaymentAsync(1000m, "A-authority");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.True);
+            Assert.That(result.ErrorCode, Is.EqualTo("-54"));
+        });
+    }
+
+    [Test]
+    public async Task VerifyPaymentAsync_should_treat_code_minus_51_as_a_definitive_failure()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent("{\"data\":{\"code\":-51},\"errors\":[]}")
+        });
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.VerifyPaymentAsync(1000m, "A-authority");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.False);
+            Assert.That(result.ErrorCode, Is.EqualTo("-51"));
+        });
     }
 
     [TestCase(100, false)]

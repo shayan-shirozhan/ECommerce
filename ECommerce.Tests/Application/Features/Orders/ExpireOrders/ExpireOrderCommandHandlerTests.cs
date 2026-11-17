@@ -1,10 +1,12 @@
 using ECommerce.Application;
+using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Orders.ExpireOrders;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Identity;
+using ECommerce.Infrastructure.Persistence.Repositories;
 using ECommerce.Tests.Infrastructure.Fixtures;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
@@ -91,6 +93,156 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
             Assert.That(failedPayment.Status, Is.EqualTo(PaymentStatus.Failed));
             Assert.That(pendingPayment.Status, Is.EqualTo(PaymentStatus.Cancelled));
             Assert.That(offer.Stock, Is.EqualTo(10));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_confirm_zarinpal_order_when_expiration_reconciliation_finds_successful_payment()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalOrderAsync(authority);
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayVerificationResult(true, false, 987654321));
+        using var provider = CreateProvider(gateway);
+
+        var processed = await SendAsync(
+            provider,
+            seeded.OrderId,
+            DateTime.UtcNow.AddMinutes(1));
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await context.SellerOffers.SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.False);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Successful));
+            Assert.That(order.Payments.Single().RefId, Is.EqualTo(987654321));
+            Assert.That(order.Payments.Single().LastVerificationAttemptedAt, Is.Not.Null);
+            Assert.That(offer.Stock, Is.EqualTo(8));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_cancel_zarinpal_order_when_reconciliation_confirms_payment_failure()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalOrderAsync(authority);
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayVerificationResult(false, false, null, "-51", "Payment not completed"));
+        using var provider = CreateProvider(gateway);
+
+        var processed = await SendAsync(
+            provider,
+            seeded.OrderId,
+            DateTime.UtcNow.AddMinutes(1));
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await context.SellerOffers.SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.True);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(offer.Stock, Is.EqualTo(10));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_keep_expired_zarinpal_order_and_reserved_stock_when_verification_is_indeterminate()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalOrderAsync(authority);
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayVerificationResult(
+                false,
+                false,
+                null,
+                "503",
+                "Provider temporarily unavailable.",
+                IsIndeterminate: true));
+        using var provider = CreateProvider(gateway);
+
+        Assert.ThrowsAsync<PaymentGatewayException>(async () =>
+            await SendAsync(provider, seeded.OrderId, DateTime.UtcNow.AddMinutes(1)));
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await context.SellerOffers.SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(order.Payments.Single().LastVerificationAttemptedAt, Is.Not.Null);
+            Assert.That(offer.Stock, Is.EqualTo(8));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_respect_verification_retry_delay_before_reconciling_expired_order()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalOrderAsync(
+            authority,
+            DateTime.UtcNow.AddSeconds(-30));
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayVerificationResult(true, false, 987654321));
+        using var provider = CreateProvider(gateway);
+
+        var processed = await SendAsync(
+            provider,
+            seeded.OrderId,
+            DateTime.UtcNow.AddMinutes(1));
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.False);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task GetExpiredOrderIdsAsync_should_skip_orders_with_recent_zarinpal_verification_attempts()
+    {
+        var recentlyVerifiedOrder = await SeedZarinPalOrderAsync(
+            $"A{Guid.NewGuid():N}",
+            DateTime.UtcNow.AddSeconds(-30));
+        var regularExpiredOrder = await SeedOrderAsync();
+
+        await using var context = CreateDbContext();
+        var repository = new OrderRepository(context);
+        var nowUtc = DateTime.UtcNow;
+
+        var result = await repository.GetExpiredOrderIdsAsync(
+            nowUtc.AddMinutes(1),
+            nowUtc.Subtract(PaymentGatewayRetryPolicy.RetryDelay),
+            take: 100);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result, Does.Contain(regularExpiredOrder.OrderId));
+            Assert.That(result, Does.Not.Contain(recentlyVerifiedOrder.OrderId));
         });
     }
 
@@ -269,6 +421,31 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
             pendingPaymentId);
     }
 
+    private async Task<SeededOrder> SeedZarinPalOrderAsync(
+        string authority,
+        DateTime? lastVerificationAttemptedAt = null)
+    {
+        var seeded = await SeedOrderAsync();
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Groups)
+            .ThenInclude(group => group.Items)
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddMinutes(-3));
+        payment.SetAuthority(authority);
+
+        if (lastVerificationAttemptedAt.HasValue)
+            payment.MarkVerificationAttempted(lastVerificationAttemptedAt.Value);
+
+        await context.SaveChangesAsync();
+
+        return seeded with { PendingPaymentId = payment.Id };
+    }
+
     private static ApplicationUser CreateUser(Guid id, string userName)
     {
         var email = $"{userName}@example.test";
@@ -285,7 +462,7 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
         };
     }
 
-    private ServiceProvider CreateProvider()
+    private ServiceProvider CreateProvider(IPaymentGateway? paymentGateway = null)
     {
         var configuration = new ConfigurationManager();
 
@@ -300,6 +477,9 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
         services.AddLogging();
         services.AddApplication();
         services.AddInfrastructure(configuration);
+
+        if (paymentGateway is not null)
+            services.AddSingleton<IPaymentGateway>(paymentGateway);
 
         return services.BuildServiceProvider();
     }
@@ -330,6 +510,32 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
         catch (Exception exception)
         {
             return new ExpirationOutcome(null, exception);
+        }
+    }
+
+    private sealed class FixedPaymentGateway(
+        PaymentGatewayVerificationResult verificationResult) : IPaymentGateway
+    {
+        public int CallCount { get; private set; }
+
+        public string GetPaymentUrl(string authority)
+            => "https://www.zarinpal.com/pg/StartPay/" + authority;
+
+        public Task<PaymentGatewayRequestResult> RequestPaymentAsync(
+            Guid paymentId,
+            Guid orderId,
+            decimal amount,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<PaymentGatewayVerificationResult> VerifyPaymentAsync(
+            decimal amount,
+            string authority,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(verificationResult);
         }
     }
 

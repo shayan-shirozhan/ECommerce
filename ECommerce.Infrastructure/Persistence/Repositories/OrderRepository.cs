@@ -141,7 +141,10 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
             .FirstOrDefaultAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(DateTime cutoffUtc, int take,
+    public async Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(
+        DateTime cutoffUtc,
+        DateTime verificationRetryCutoffUtc,
+        int take,
         CancellationToken cancellationToken = default)
     {
         if (take <= 0)
@@ -152,7 +155,12 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
             .Where(order =>
                 order.CreatedAt <= cutoffUtc &&
                 (order.Status == OrderStatus.Pending ||
-                 order.Status == OrderStatus.AwaitingPayment))
+                 order.Status == OrderStatus.AwaitingPayment) &&
+                !order.Payments.Any(payment =>
+                    payment.Status == PaymentStatus.Pending &&
+                    payment.PaymentMethod == PaymentMethod.ZarinPal &&
+                    payment.Authority != null &&
+                    payment.LastVerificationAttemptedAt > verificationRetryCutoffUtc))
             .OrderBy(order => order.CreatedAt)
             .ThenBy(order => order.Id)
             .Select(order => order.Id)

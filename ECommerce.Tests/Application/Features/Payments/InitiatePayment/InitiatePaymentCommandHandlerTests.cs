@@ -520,6 +520,178 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
         });
     }
 
+    [Test]
+    public async Task Handle_should_keep_payment_pending_when_gateway_returns_indeterminate_request_result()
+    {
+        var userId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = CreateOrderWithItem(userId, sellerId);
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayRequestResult(
+                false,
+                null,
+                null,
+                "-54",
+                "Unknown provider result",
+                IsIndeterminate: true));
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider(userId, gateway);
+
+        Assert.ThrowsAsync<PaymentGatewayException>(
+            async () => await SendAsync(provider, order.Id, PaymentMethod.ZarinPal));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == order.Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Payments, Has.Count.EqualTo(1));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(persistedOrder.Payments.Single().Authority, Is.Null);
+            Assert.That(persistedOrder.Payments.Single().LastGatewayRequestStartedAt, Is.Not.Null);
+            Assert.That(gateway.RequestCallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_keep_payment_pending_when_gateway_request_outcome_is_unknown()
+    {
+        var userId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = CreateOrderWithItem(userId, sellerId);
+        var gateway = new ThrowingZarinPalGateway(
+            new PaymentGatewayException("Provider request timed out."));
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider(userId, gateway);
+
+        Assert.ThrowsAsync<PaymentGatewayException>(
+            async () => await SendAsync(provider, order.Id, PaymentMethod.ZarinPal));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == order.Id);
+        var payment = persistedOrder.Payments.Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(payment.Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(payment.Authority, Is.Null);
+            Assert.That(payment.LastGatewayRequestStartedAt, Is.Not.Null);
+            Assert.That(gateway.RequestCallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_block_retry_while_gateway_request_lease_is_active()
+    {
+        var userId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = CreateOrderWithItem(userId, sellerId);
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddSeconds(-30));
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayRequestResult(true, "A-authority", "https://pay.example/A-authority"));
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider(userId, gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await SendAsync(provider, order.Id, PaymentMethod.ZarinPal));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == order.Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Payments.Single().Id, Is.EqualTo(payment.Id));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(gateway.RequestCallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_retry_stale_authorityless_payment_using_the_same_payment_id()
+    {
+        var userId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = CreateOrderWithItem(userId, sellerId);
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddMinutes(-3));
+        var paymentId = payment.Id;
+        var authority = $"A{Guid.NewGuid():N}";
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayRequestResult(
+                true,
+                authority,
+                "https://www.zarinpal.com/pg/StartPay/" + authority));
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(userId, $"buyer-{suffix}", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider(userId, gateway);
+        var response = await SendAsync(provider, order.Id, PaymentMethod.ZarinPal);
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == order.Id);
+        var persistedPayment = persistedOrder.Payments.Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.PaymentId, Is.EqualTo(paymentId));
+            Assert.That(gateway.LastPaymentId, Is.EqualTo(paymentId));
+            Assert.That(gateway.RequestCallCount, Is.EqualTo(1));
+            Assert.That(persistedOrder.Payments, Has.Count.EqualTo(1));
+            Assert.That(persistedPayment.Id, Is.EqualTo(paymentId));
+            Assert.That(persistedPayment.Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(persistedPayment.Authority, Is.EqualTo(authority));
+            Assert.That(persistedPayment.LastGatewayRequestStartedAt, Is.GreaterThan(DateTime.UtcNow.AddMinutes(-1)));
+        });
+    }
+
     private static Order CreateOrderWithItem(
         Guid userId,
         Guid sellerId)
@@ -620,6 +792,31 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
 
         return await sender.Send(
             new InitiatePaymentCommand(orderId, paymentMethod));
+    }
+
+    private sealed class ThrowingZarinPalGateway(Exception exception) : IPaymentGateway
+    {
+        public int RequestCallCount { get; private set; }
+
+        public string GetPaymentUrl(string authority)
+            => "https://www.zarinpal.com/pg/StartPay/" + authority;
+
+        public Task<PaymentGatewayRequestResult> RequestPaymentAsync(
+            Guid paymentId,
+            Guid orderId,
+            decimal amount,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            RequestCallCount++;
+            return Task.FromException<PaymentGatewayRequestResult>(exception);
+        }
+
+        public Task<PaymentGatewayVerificationResult> VerifyPaymentAsync(
+            decimal amount,
+            string authority,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FixedZarinPalGateway(PaymentGatewayRequestResult requestResult)

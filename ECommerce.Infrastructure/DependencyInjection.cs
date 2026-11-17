@@ -109,6 +109,8 @@ public static class DependencyInjection
                     "ZarinPal CallbackUrl must be a valid HTTPS URL.")
                 .Validate(options => options.TimeoutSeconds > 0,
                     "ZarinPal TimeoutSeconds must be greater than zero.")
+                .Validate(options => options.TimeoutSeconds < 60,
+                    "ZarinPal TimeoutSeconds must be less than 60 seconds so the two-minute payment request retry lease includes a recovery buffer.")
                 .ValidateOnStart();
 
             services.AddHttpClient<IPaymentGateway, ZarinPalPaymentGateway>((provider, client) =>
