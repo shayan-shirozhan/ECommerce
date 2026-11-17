@@ -11,6 +11,8 @@ public class OrderGroupConfiguration : IEntityTypeConfiguration<OrderGroup>
     {
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Status).IsRequired();
+        builder.Property(x => x.ShippingCarrier).HasMaxLength(100);
+        builder.Property(x => x.TrackingCode).HasMaxLength(100);
         builder.Property(x => x.TotalAmount).HasPrecision(18, 2).IsRequired();
 
         builder.HasOne<Order>()

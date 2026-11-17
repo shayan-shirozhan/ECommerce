@@ -8,7 +8,7 @@ namespace ECommerce.Application.Features.Payments.CompleteZarinPalPayment;
 
 public sealed class CompleteZarinPalPaymentCommandHandler(
     IOrderRepository orderRepository,
-    IPaymentGateway paymentGateway,
+    IEnumerable<IPaymentGateway> paymentGateways,
     IUnitOfWork unitOfWork)
     : IRequestHandler<CompleteZarinPalPaymentCommand, CompleteZarinPalPaymentResponse>
 {
@@ -64,6 +64,10 @@ public sealed class CompleteZarinPalPaymentCommandHandler(
         {
             // Status=OK from the browser is not proof of payment. Verify the saved
             // authority and the amount loaded from our database on the provider server.
+            var paymentGateway = paymentGateways.SingleOrDefault()
+                ?? throw new PaymentGatewayException(
+                    "ZarinPal payment gateway is not configured.");
+
             var verification = await paymentGateway.VerifyPaymentAsync(
                 payment.Amount,
                 payment.Authority!,

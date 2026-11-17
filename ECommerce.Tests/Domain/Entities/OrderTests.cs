@@ -1,4 +1,4 @@
-using ECommerce.Domain.Entities;
+﻿using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Domain.Exceptions;
 
@@ -295,7 +295,7 @@ public sealed class OrderTests
         order.MoveSellerGroupToProcessing(secondSellerId);
 
         // Act - only the first seller ships their group.
-        order.MoveSellerGroupToShipped(firstSellerId);
+        order.MoveSellerGroupToShipped(firstSellerId, "Post", "TRACK-FIRST-001");
 
         // Assert intermediate aggregate state.
         Assert.Multiple(() =>
@@ -308,7 +308,7 @@ public sealed class OrderTests
         });
 
         // Act - the second seller ships their group.
-        order.MoveSellerGroupToShipped(secondSellerId);
+        order.MoveSellerGroupToShipped(secondSellerId, "Tipax", "TRACK-SECOND-002");
 
         // Assert final aggregate state.
         Assert.Multiple(() =>
@@ -318,6 +318,71 @@ public sealed class OrderTests
                 Is.EqualTo(OrderGroupStatus.Shipped));
             Assert.That(GetSellerGroup(order, secondSellerId).Status,
                 Is.EqualTo(OrderGroupStatus.Shipped));
+        });
+    }
+
+    [Test]
+    public void MoveSellerGroupToShipped_should_store_normalized_carrier_and_tracking_code()
+    {
+        var (order, sellerId, _) = CreateConfirmedOrderWithMultipleSellerGroups();
+        order.MoveSellerGroupToProcessing(sellerId);
+
+        order.MoveSellerGroupToShipped(sellerId, "  Post  ", "  TRACK-123  ");
+
+        var group = GetSellerGroup(order, sellerId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(group.Status, Is.EqualTo(OrderGroupStatus.Shipped));
+            Assert.That(group.ShippingCarrier, Is.EqualTo("Post"));
+            Assert.That(group.TrackingCode, Is.EqualTo("TRACK-123"));
+        });
+    }
+
+    [TestCase(null, "TRACK-123")]
+    [TestCase("   ", "TRACK-123")]
+    [TestCase("Post", null)]
+    [TestCase("Post", "   ")]
+    public void MoveSellerGroupToShipped_should_reject_missing_shipping_details(
+        string? shippingCarrier,
+        string? trackingCode)
+    {
+        var (order, sellerId, _) = CreateConfirmedOrderWithMultipleSellerGroups();
+        order.MoveSellerGroupToProcessing(sellerId);
+
+        Assert.Throws<DomainException>(() =>
+            order.MoveSellerGroupToShipped(sellerId, shippingCarrier!, trackingCode!));
+
+        var group = GetSellerGroup(order, sellerId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Processing));
+            Assert.That(group.Status, Is.EqualTo(OrderGroupStatus.Processing));
+            Assert.That(group.ShippingCarrier, Is.Null);
+            Assert.That(group.TrackingCode, Is.Null);
+        });
+    }
+
+    [TestCase(101, 50)]
+    [TestCase(50, 101)]
+    public void MoveSellerGroupToShipped_should_reject_shipping_details_longer_than_100_characters(
+        int carrierLength,
+        int trackingCodeLength)
+    {
+        var (order, sellerId, _) = CreateConfirmedOrderWithMultipleSellerGroups();
+        order.MoveSellerGroupToProcessing(sellerId);
+
+        Assert.Throws<DomainException>(() =>
+            order.MoveSellerGroupToShipped(
+                sellerId,
+                new string('C', carrierLength),
+                new string('T', trackingCodeLength)));
+
+        var group = GetSellerGroup(order, sellerId);
+        Assert.Multiple(() =>
+        {
+            Assert.That(group.Status, Is.EqualTo(OrderGroupStatus.Processing));
+            Assert.That(group.ShippingCarrier, Is.Null);
+            Assert.That(group.TrackingCode, Is.Null);
         });
     }
 
@@ -360,7 +425,7 @@ public sealed class OrderTests
         var (order, firstSellerId, secondSellerId) = CreateConfirmedOrderWithMultipleSellerGroups();
         order.MoveSellerGroupToProcessing(firstSellerId);
         order.MoveSellerGroupToProcessing(secondSellerId);
-        order.MoveSellerGroupToShipped(firstSellerId);
+        order.MoveSellerGroupToShipped(firstSellerId, "Post", "TRACK-FIRST-001");
 
         // Act: the first seller delivers independently of the second seller's progress.
         order.MoveSellerGroupToDelivered(firstSellerId);
@@ -376,7 +441,7 @@ public sealed class OrderTests
         });
 
         // Act: the second seller can then ship and deliver their own group.
-        order.MoveSellerGroupToShipped(secondSellerId);
+        order.MoveSellerGroupToShipped(secondSellerId, "Tipax", "TRACK-SECOND-002");
         order.MoveSellerGroupToDelivered(secondSellerId);
 
         // Assert: the aggregate becomes Delivered only after every seller group is delivered.
@@ -420,7 +485,7 @@ public sealed class OrderTests
 
         // Act - the order is Processing, but the second seller's group is still Pending.
         var exception = Assert.Throws<DomainException>(
-            () => order.MoveSellerGroupToShipped(secondSellerId));
+            () => order.MoveSellerGroupToShipped(secondSellerId, "Tipax", "TRACK-SECOND-002"));
 
         // Assert
         Assert.Multiple(() =>
@@ -591,8 +656,8 @@ public sealed class OrderTests
     {
         order.MoveSellerGroupToProcessing(firstSellerId);
         order.MoveSellerGroupToProcessing(secondSellerId);
-        order.MoveSellerGroupToShipped(firstSellerId);
-        order.MoveSellerGroupToShipped(secondSellerId);
+        order.MoveSellerGroupToShipped(firstSellerId, "Post", "TRACK-FIRST-001");
+        order.MoveSellerGroupToShipped(secondSellerId, "Tipax", "TRACK-SECOND-002");
     }
 
     private static Order CreateEmptyOrder()

@@ -173,6 +173,29 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         Assert.That(gateway.CallCount, Is.Zero);
     }
 
+
+    [Test]
+    public async Task Handle_should_keep_payment_pending_when_gateway_is_not_configured_for_ok_callback()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(authority);
+        using var provider = CreateProvider();
+
+        Assert.ThrowsAsync<PaymentGatewayException>(
+            async () => await SendAsync(provider, seeded.PaymentId, authority, "OK"));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(order => order.Payments)
+            .SingleAsync(order => order.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+        });
+    }
+
     private async Task<SeededPayment> SeedZarinPalPaymentAsync(string authority)
     {
         var userId = Guid.NewGuid();
@@ -194,7 +217,7 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         return new SeededPayment(order.Id, payment.Id);
     }
 
-    private ServiceProvider CreateProvider(IPaymentGateway gateway)
+    private ServiceProvider CreateProvider(IPaymentGateway? gateway = null)
     {
         var configuration = new ConfigurationManager();
         configuration["ConnectionStrings:ECommerceDb"] = ConnectionString;
@@ -207,7 +230,9 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         services.AddLogging();
         services.AddApplication();
         services.AddInfrastructure(configuration);
-        services.AddScoped<IPaymentGateway>(_ => gateway);
+
+        if (gateway is not null)
+            services.AddScoped<IPaymentGateway>(_ => gateway);
 
         return services.BuildServiceProvider();
     }

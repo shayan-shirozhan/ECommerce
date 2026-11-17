@@ -25,6 +25,10 @@ public class OrderGroup : AuditableEntity
     public Guid OrderId { get; private set; }
     public Guid SellerId { get; private set; }
     public OrderGroupStatus Status { get; private set; }
+    /// <summary>Shipping carrier chosen by this seller for the group shipment.</summary>
+    public string? ShippingCarrier { get; private set; }
+    /// <summary>Carrier tracking code for this seller group's shipment.</summary>
+    public string? TrackingCode { get; private set; }
     /// <summary>Seller group's total, stored in Toman.</summary>
     public decimal TotalAmount { get; private set; }
 
@@ -55,11 +59,28 @@ public class OrderGroup : AuditableEntity
         Status = OrderGroupStatus.Processing;
     }
 
-    internal void MoveToShipped()
+    internal void MoveToShipped(string shippingCarrier, string trackingCode)
     {
         if (Status != OrderGroupStatus.Processing)
             throw new DomainException("Order group cannot be moved to shipped in its current state.");
 
+        if (string.IsNullOrWhiteSpace(shippingCarrier))
+            throw new DomainException("Shipping carrier is required when shipping an order group.");
+
+        if (string.IsNullOrWhiteSpace(trackingCode))
+            throw new DomainException("Tracking code is required when shipping an order group.");
+
+        var normalizedCarrier = shippingCarrier.Trim();
+        var normalizedTrackingCode = trackingCode.Trim();
+
+        if (normalizedCarrier.Length > 100)
+            throw new DomainException("Shipping carrier cannot exceed 100 characters.");
+
+        if (normalizedTrackingCode.Length > 100)
+            throw new DomainException("Tracking code cannot exceed 100 characters.");
+
+        ShippingCarrier = normalizedCarrier;
+        TrackingCode = normalizedTrackingCode;
         Status = OrderGroupStatus.Shipped;
     }
 

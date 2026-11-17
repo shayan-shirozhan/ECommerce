@@ -64,7 +64,9 @@ public sealed class SellerOrdersController(ISender sender) : ControllerBase
         var response = await sender.Send(
             new UpdateSellerOrderStatusCommand(
                 orderId,
-                request.NewStatus),
+                request.NewStatus,
+                request.ShippingCarrier,
+                request.TrackingCode),
             cancellationToken);
 
         return Ok(response);

@@ -21,6 +21,8 @@ public sealed class GetMyOrderByIdQueryHandler(ICurrentUser currentUser, IOrderR
                 .Select(orderGroup =>
                     new OrderGroupDetailsResponse(orderGroup.Id, orderGroup.SellerId, orderGroup.Status,
                         orderGroup.TotalAmount,
+                        orderGroup.ShippingCarrier,
+                        orderGroup.TrackingCode,
                         orderGroup.Items.Select(item =>
                             new OrderItemDetailsResponse(item.Id, item.ProductId, item.ProductVariantId,
                                 item.SellerOfferId, item.ProductName, item.VariantName, item.SellerName, item.UnitPrice,
