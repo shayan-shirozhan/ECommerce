@@ -102,6 +102,11 @@ public sealed class GetMyOrderByIdQueryHandlerTests : PostgresTestBase
 
         var expectedGroup = order.Groups.Single();
         var expectedItem = expectedGroup.Items.Single();
+        var payment = order.InitiatePayment();
+        payment.MarkSuccessful($"buyer-tracking-{Guid.NewGuid():N}");
+        order.Confirm();
+        order.MoveSellerGroupToProcessing(sellerId);
+        order.MoveSellerGroupToShipped(sellerId, "Post", "BUYER-TRACK-123");
 
         await using (var context = CreateDbContext())
         {
@@ -178,6 +183,8 @@ public sealed class GetMyOrderByIdQueryHandlerTests : PostgresTestBase
         Assert.That(
             returnedGroup.TotalAmount,
             Is.EqualTo(340m));
+        Assert.That(returnedGroup.ShippingCarrier, Is.EqualTo("Post"));
+        Assert.That(returnedGroup.TrackingCode, Is.EqualTo("BUYER-TRACK-123"));
 
         // Assert: Order item
         Assert.That(returnedGroup.Items, Has.Count.EqualTo(1));

@@ -710,13 +710,15 @@ Authorization: Bearer {{SellerToken}}
 ###
 
 ### Update Seller Order Status - Shipped
-
+# Shipping carrier and tracking code are required when a seller ships their group.
 PATCH {{ECommerce_API_HostAddress}}/api/seller-orders/{{OrderId}}/status
 Content-Type: application/json
 Authorization: Bearer {{SellerToken}}
 
 {
-  "newStatus": 3
+  "newStatus": 3,
+  "shippingCarrier": "Post",
+  "trackingCode": "TRACK-123456789"
 }
 
 ###

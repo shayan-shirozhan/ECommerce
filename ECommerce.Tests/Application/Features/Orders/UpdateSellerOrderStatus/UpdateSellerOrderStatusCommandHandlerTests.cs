@@ -100,7 +100,9 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
         var response = await SendAsync(
             provider,
             seeded.OrderId,
-            OrderGroupStatus.Shipped);
+            OrderGroupStatus.Shipped,
+            "Post",
+            "TRACK-FIRST-001");
 
         await using var verificationContext = CreateDbContext();
         var persistedOrder = await verificationContext.Orders
@@ -112,6 +114,10 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
         {
             Assert.That(response.OrderStatus, Is.EqualTo(OrderStatus.Processing));
             Assert.That(response.OrderGroupStatus, Is.EqualTo(OrderGroupStatus.Shipped));
+            Assert.That(response.ShippingCarrier, Is.EqualTo("Post"));
+            Assert.That(response.TrackingCode, Is.EqualTo("TRACK-FIRST-001"));
+            Assert.That(GetSellerGroup(persistedOrder, seeded.FirstSellerId).ShippingCarrier, Is.EqualTo("Post"));
+            Assert.That(GetSellerGroup(persistedOrder, seeded.FirstSellerId).TrackingCode, Is.EqualTo("TRACK-FIRST-001"));
             Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Processing));
             Assert.That(GetSellerGroup(persistedOrder, seeded.FirstSellerId).Status,
                 Is.EqualTo(OrderGroupStatus.Shipped));
@@ -124,7 +130,9 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
         var secondResponse = await SendAsync(
             secondSellerProvider,
             seeded.OrderId,
-            OrderGroupStatus.Shipped);
+            OrderGroupStatus.Shipped,
+            "Tipax",
+            "TRACK-SECOND-002");
 
         await using var finalContext = CreateDbContext();
         var finalOrder = await finalContext.Orders
@@ -148,8 +156,8 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
         {
             order.MoveSellerGroupToProcessing(firstSellerId);
             order.MoveSellerGroupToProcessing(secondSellerId);
-            order.MoveSellerGroupToShipped(firstSellerId);
-            order.MoveSellerGroupToShipped(secondSellerId);
+            order.MoveSellerGroupToShipped(firstSellerId, "Post", "TRACK-FIRST-001");
+            order.MoveSellerGroupToShipped(secondSellerId, "Tipax", "TRACK-SECOND-002");
         });
 
         using var firstSellerProvider = CreateProvider(seeded.FirstSellerId);
@@ -208,7 +216,7 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
         {
             order.MoveSellerGroupToProcessing(firstSellerId);
             order.MoveSellerGroupToProcessing(secondSellerId);
-            order.MoveSellerGroupToShipped(firstSellerId);
+            order.MoveSellerGroupToShipped(firstSellerId, "Post", "TRACK-FIRST-001");
         });
         using var firstSellerProvider = CreateProvider(seeded.FirstSellerId);
 
@@ -236,7 +244,7 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
 
         // Act: the second seller can finish their independent shipment afterwards.
         using var secondSellerProvider = CreateProvider(seeded.SecondSellerId);
-        await SendAsync(secondSellerProvider, seeded.OrderId, OrderGroupStatus.Shipped);
+        await SendAsync(secondSellerProvider, seeded.OrderId, OrderGroupStatus.Shipped, "Tipax", "TRACK-SECOND-002");
         var secondResponse = await SendAsync(
             secondSellerProvider,
             seeded.OrderId,
@@ -255,6 +263,67 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
             Assert.That(persistedOrder.Groups.Select(group => group.Status),
                 Is.All.EqualTo(OrderGroupStatus.Delivered));
         });
+    }
+
+    [Test]
+    public void Handle_should_reject_shipped_status_without_shipping_carrier()
+    {
+        using var provider = CreateProvider(Guid.NewGuid());
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(provider, Guid.NewGuid(), OrderGroupStatus.Shipped, null, "TRACK-123"));
+    }
+
+    [Test]
+    public void Handle_should_reject_shipped_status_without_tracking_code()
+    {
+        using var provider = CreateProvider(Guid.NewGuid());
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(provider, Guid.NewGuid(), OrderGroupStatus.Shipped, "Post", null));
+    }
+
+    [Test]
+    public void Handle_should_reject_shipped_status_with_whitespace_shipping_details()
+    {
+        using var provider = CreateProvider(Guid.NewGuid());
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(provider, Guid.NewGuid(), OrderGroupStatus.Shipped, "   ", "TRACK-123"));
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(provider, Guid.NewGuid(), OrderGroupStatus.Shipped, "Post", "   "));
+    }
+
+    [Test]
+    public void Handle_should_reject_shipped_status_when_shipping_details_exceed_100_characters()
+    {
+        using var provider = CreateProvider(Guid.NewGuid());
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(
+                provider,
+                Guid.NewGuid(),
+                OrderGroupStatus.Shipped,
+                new string('C', 101),
+                "TRACK-123"));
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(
+                provider,
+                Guid.NewGuid(),
+                OrderGroupStatus.Shipped,
+                "Post",
+                new string('T', 101)));
+    }
+
+    [Test]
+    public void Handle_should_reject_shipping_details_when_status_is_not_shipped()
+    {
+        using var provider = CreateProvider(Guid.NewGuid());
+
+        Assert.ThrowsAsync<ValidationException>(async () =>
+            await SendAsync(provider, Guid.NewGuid(), OrderGroupStatus.Processing, "Post", "TRACK-123"));
     }
 
     [Test]
@@ -436,12 +505,14 @@ public sealed class UpdateSellerOrderStatusCommandHandlerTests : PostgresTestBas
     private static async Task<UpdateSellerOrderStatusResponse> SendAsync(
         IServiceProvider provider,
         Guid orderId,
-        OrderGroupStatus newStatus)
+        OrderGroupStatus newStatus,
+        string? shippingCarrier = null,
+        string? trackingCode = null)
     {
         using var scope = provider.CreateScope();
         var sender = scope.ServiceProvider.GetRequiredService<ISender>();
 
-        return await sender.Send(new UpdateSellerOrderStatusCommand(orderId, newStatus));
+        return await sender.Send(new UpdateSellerOrderStatusCommand(orderId, newStatus, shippingCarrier, trackingCode));
     }
 
     private static OrderGroup GetSellerGroup(Order order, Guid sellerId)

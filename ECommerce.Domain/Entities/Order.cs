@@ -145,16 +145,20 @@ public class Order : AuditableEntity
         UpdateStatusFromGroups();
     }
 
-    public void MoveSellerGroupToShipped(Guid sellerId)
+    public void MoveSellerGroupToShipped(
+        Guid sellerId,
+        string shippingCarrier,
+        string trackingCode)
     {
         if (Status != OrderStatus.Processing)
             throw new DomainException("Order cannot move to shipped in its current state.");
 
         var orderGroup = _groups.SingleOrDefault(group => group.SellerId == sellerId);
 
-        if (orderGroup is null) throw new DomainException("Order group for this seller was not found.");
+        if (orderGroup is null)
+            throw new DomainException("Order group for this seller was not found.");
 
-        orderGroup.MoveToShipped();
+        orderGroup.MoveToShipped(shippingCarrier, trackingCode);
 
         UpdateStatusFromGroups();
     }

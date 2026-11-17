@@ -6,4 +6,6 @@ public sealed record UpdateSellerOrderStatusResponse(
     Guid OrderId,
     OrderStatus OrderStatus,
     Guid OrderGroupId,
-    OrderGroupStatus OrderGroupStatus);
+    OrderGroupStatus OrderGroupStatus,
+    string? ShippingCarrier,
+    string? TrackingCode);

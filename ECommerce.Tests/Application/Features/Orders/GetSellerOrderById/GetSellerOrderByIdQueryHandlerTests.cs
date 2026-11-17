@@ -119,6 +119,11 @@ public sealed class GetSellerOrderByIdQueryHandlerTests : PostgresTestBase
             item => item.ProductName == "Test Product");
         var expectedSecondItem = expectedCurrentSellerGroup.Items.Single(
             item => item.ProductName == "Second Current Seller Product");
+        var payment = order.InitiatePayment();
+        payment.MarkSuccessful($"seller-tracking-{Guid.NewGuid():N}");
+        order.Confirm();
+        order.MoveSellerGroupToProcessing(currentSellerId);
+        order.MoveSellerGroupToShipped(currentSellerId, "Tipax", "SELLER-TRACK-456");
 
         await using (var context = CreateDbContext())
         {
@@ -153,6 +158,8 @@ public sealed class GetSellerOrderByIdQueryHandlerTests : PostgresTestBase
         Assert.That(response.OrderGroupId, Is.EqualTo(expectedCurrentSellerGroup.Id));
         Assert.That(response.OrderGroupId, Is.Not.EqualTo(otherSellerGroup.Id));
         Assert.That(response.OrderGroupStatus, Is.EqualTo(expectedCurrentSellerGroup.Status));
+        Assert.That(response.ShippingCarrier, Is.EqualTo("Tipax"));
+        Assert.That(response.TrackingCode, Is.EqualTo("SELLER-TRACK-456"));
         Assert.That(response.TotalAmount, Is.EqualTo(430m));
         Assert.That(response.TotalAmount, Is.Not.EqualTo(order.TotalAmount));
 

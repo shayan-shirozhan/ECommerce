@@ -22,6 +22,7 @@ public sealed class GetSellerOrderByIdQueryHandler(IOrderRepository orderReposit
         return new GetSellerOrderByIdResponse(order.Id, order.Status, order.CreatedAt, order.ShippingRecipientName,
             order.ShippingPhoneNumber, order.ShippingProvince, order.ShippingCity, order.ShippingPostalCode,
             order.ShippingAddressLine, orderGroup.Id, orderGroup.Status, orderGroup.TotalAmount,
+            orderGroup.ShippingCarrier, orderGroup.TrackingCode,
             orderGroup.Items.Select(item => new SellerOrderItemResponse(item.Id, item.ProductId, item.ProductVariantId,
                 item.SellerOfferId, item.ProductName, item.VariantName, item.SellerName, item.UnitPrice, item.Quantity,
                 item.DiscountAmount, item.TotalAmount)).ToList());

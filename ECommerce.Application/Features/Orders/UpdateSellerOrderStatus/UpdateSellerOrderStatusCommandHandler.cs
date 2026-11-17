@@ -1,4 +1,4 @@
-using ECommerce.Application.Abstractions.Identity;
+﻿using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Domain.Enums;
@@ -30,7 +30,10 @@ public sealed class UpdateSellerOrderStatusCommandHandler(
                 break;
 
             case OrderGroupStatus.Shipped:
-                order.MoveSellerGroupToShipped(sellerId);
+                order.MoveSellerGroupToShipped(
+                    sellerId,
+                    command.ShippingCarrier!,
+                    command.TrackingCode!);
                 break;
 
             case OrderGroupStatus.Delivered:
@@ -45,6 +48,12 @@ public sealed class UpdateSellerOrderStatusCommandHandler(
 
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return new UpdateSellerOrderStatusResponse(order.Id, order.Status, orderGroup.Id, orderGroup.Status);
+        return new UpdateSellerOrderStatusResponse(
+            order.Id,
+            order.Status,
+            orderGroup.Id,
+            orderGroup.Status,
+            orderGroup.ShippingCarrier,
+            orderGroup.TrackingCode);
     }
 }

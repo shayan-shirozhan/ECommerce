@@ -15,6 +15,8 @@ public sealed record GetSellerOrderByIdResponse(
     Guid OrderGroupId,
     OrderGroupStatus OrderGroupStatus,
     decimal TotalAmount,
+    string? ShippingCarrier,
+    string? TrackingCode,
     IReadOnlyList<SellerOrderItemResponse> Items);
 
 public sealed record SellerOrderItemResponse(

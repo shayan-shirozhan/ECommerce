@@ -20,7 +20,9 @@ public sealed record OrderGroupDetailsResponse(
     Guid SellerId,
     OrderGroupStatus Status,
     decimal TotalAmount,
-    IReadOnlyList<OrderItemDetailsResponse>  Items);
+    string? ShippingCarrier,
+    string? TrackingCode,
+    IReadOnlyList<OrderItemDetailsResponse> Items);
 
 public sealed record OrderItemDetailsResponse(
     Guid OrderItemId,
