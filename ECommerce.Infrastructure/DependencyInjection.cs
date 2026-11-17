@@ -57,6 +57,12 @@ public static class DependencyInjection
 
         services.Configure<JwtOptions>(jwtSection);
 
+        services.AddOptions<RefreshTokenOptions>()
+            .Bind(configuration.GetSection(RefreshTokenOptions.SectionName))
+            .Validate(options => options.ExpirationDays is > 0 and <= 90,
+                "RefreshTokens:ExpirationDays must be between 1 and 90 days.")
+            .ValidateOnStart();
+
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
         {
             options.TokenValidationParameters = new TokenValidationParameters
@@ -76,6 +82,8 @@ public static class DependencyInjection
         services.AddScoped<ICurrentUser, CurrentUser>();
         services.AddScoped<IAccessTokenService, JwtTokenService>();
         services.AddScoped<IIdentityService, IdentityService>();
+        services.AddScoped<IRefreshTokenService, RefreshTokenService>();
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IUserRoleService, UserRoleService>();
 
         services.AddScoped<IProductRepository, ProductRepository>();

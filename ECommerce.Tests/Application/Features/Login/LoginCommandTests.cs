@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Authentication.Login;
 
@@ -26,9 +26,15 @@ public sealed class LoginCommandTests
                 DateTime.UtcNow.AddMinutes(60))
         };
 
+        var refreshTokenService = new FakeRefreshTokenService
+        {
+            Result = new RefreshTokenResult("refresh-token", DateTime.UtcNow.AddDays(30))
+        };
+
         var handler = new LoginCommandHandler(
             identityService,
-            accessTokenService);
+            accessTokenService,
+            refreshTokenService);
 
         var command = new LoginCommand(
             "seller@test.com",
@@ -49,6 +55,8 @@ public sealed class LoginCommandTests
             Assert.That(
                 result.ExpiresAtUtc,
                 Is.EqualTo(accessTokenService.Result.ExpiresAtUtc));
+            Assert.That(result.RefreshToken, Is.EqualTo("refresh-token"));
+            Assert.That(result.RefreshTokenExpiresAtUtc, Is.EqualTo(refreshTokenService.Result.ExpiresAtUtc));
 
             Assert.That(
                 identityService.AuthenticateCalled,
@@ -57,6 +65,8 @@ public sealed class LoginCommandTests
             Assert.That(
                 accessTokenService.GenerateCalled,
                 Is.True);
+            Assert.That(refreshTokenService.IssueCalled, Is.True);
+            Assert.That(refreshTokenService.LastUserId, Is.EqualTo(user.Id));
 
             Assert.That(
                 accessTokenService.LastUser,
@@ -74,9 +84,12 @@ public sealed class LoginCommandTests
 
         var accessTokenService = new FakeAccessTokenService();
 
+        var refreshTokenService = new FakeRefreshTokenService();
+
         var handler = new LoginCommandHandler(
             identityService,
-            accessTokenService);
+            accessTokenService,
+            refreshTokenService);
 
         var command = new LoginCommand(
             "seller@test.com",
@@ -94,6 +107,7 @@ public sealed class LoginCommandTests
         Assert.That(
             accessTokenService.GenerateCalled,
             Is.False);
+        Assert.That(refreshTokenService.IssueCalled, Is.False);
     }
 
     [Test]
@@ -114,9 +128,12 @@ public sealed class LoginCommandTests
                 DateTime.UtcNow.AddMinutes(60))
         };
 
+        var refreshTokenService = new FakeRefreshTokenService();
+
         var handler = new LoginCommandHandler(
             identityService,
-            accessTokenService);
+            accessTokenService,
+            refreshTokenService);
 
         var command = new LoginCommand(
             "  seller@test.com  ",
@@ -165,6 +182,35 @@ public sealed class LoginCommandTests
             Guid userId,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+    }
+
+
+    private sealed class FakeRefreshTokenService : IRefreshTokenService
+    {
+        public RefreshTokenResult Result { get; set; } =
+            new("default-refresh-token", DateTime.UtcNow.AddDays(30));
+
+        public bool IssueCalled { get; private set; }
+        public Guid LastUserId { get; private set; }
+
+        public Task<RefreshTokenResult> IssueAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            IssueCalled = true;
+            LastUserId = userId;
+            return Task.FromResult(Result);
+        }
+
+        public Task<RefreshTokenRotationResult?> RotateAsync(
+            string refreshToken,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Token rotation is not used by login tests.");
+
+        public Task RevokeAsync(
+            string refreshToken,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Token revocation is not used by login tests.");
     }
 
     private sealed class FakeAccessTokenService : IAccessTokenService

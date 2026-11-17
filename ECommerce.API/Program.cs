@@ -47,7 +47,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("Frontend", policy =>
     {
         if (allowedOrigins.Length > 0)
-            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+            policy.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
     });
 });
 
@@ -168,6 +168,7 @@ if (app.Configuration.GetValue("HttpsRedirection:Enabled", true))
 app.UseRouting();
 app.UseCors("Frontend");
 app.UseRateLimiter();
+app.UseMiddleware<CookieRequestOriginMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
