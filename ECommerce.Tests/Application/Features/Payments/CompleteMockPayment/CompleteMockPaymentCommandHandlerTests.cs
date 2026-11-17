@@ -423,7 +423,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         };
     }
 
-    private ServiceProvider CreateProvider(Guid? currentUserId, IPaymentGateway gateway)
+    private ServiceProvider CreateProvider(Guid? currentUserId, IMockPaymentGateway gateway)
     {
         var configuration = new ConfigurationManager();
         configuration["ConnectionStrings:ECommerceDb"] = ConnectionString;
@@ -442,7 +442,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             configuration.GetSection(OrderExpirationOptions.SectionName));
 
         // Replace the production random Gateway with a deterministic test double.
-        services.AddScoped<IPaymentGateway>(_ => gateway);
+        services.AddScoped<IMockPaymentGateway>(_ => gateway);
         services.AddScoped<ICurrentUser>(_ => new TestCurrentUser(currentUserId));
 
         return services.BuildServiceProvider();
@@ -482,7 +482,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
         public bool IsInRole(string role) => false;
     }
 
-    private sealed class FixedPaymentGateway(PaymentGatewayResult result) : IPaymentGateway
+    private sealed class FixedPaymentGateway(PaymentGatewayResult result) : IMockPaymentGateway
     {
         private int _callCount;
 
@@ -505,7 +505,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
 
     private sealed class CoordinatedPaymentGateway(
         int expectedCallCount,
-        bool isSuccessful = true) : IPaymentGateway
+        bool isSuccessful = true) : IMockPaymentGateway
     {
         private readonly TaskCompletionSource _allCallsReached =
             new(TaskCreationOptions.RunContinuationsAsynchronously);

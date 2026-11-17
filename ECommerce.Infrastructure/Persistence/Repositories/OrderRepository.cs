@@ -93,6 +93,18 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<Order?> GetByPaymentIdForPaymentCallbackAsync(Guid paymentId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .AsSplitQuery()
+            .Where(order => order.Payments.Any(payment => payment.Id == paymentId))
+            .Include(order => order.Payments)
+            .Include(order => order.Groups)
+            .ThenInclude(group => group.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<Order>> GetBySellerIdAsync(Guid sellerId,
         CancellationToken cancellationToken = default)
     {

@@ -26,6 +26,7 @@ public class Order : AuditableEntity
     public Guid UserId { get; private set; }
     public uint RowVersion { get; private set; }
     public OrderStatus Status { get; private set; }
+    /// <summary>Order total, stored in Toman.</summary>
     public decimal TotalAmount { get; private set; }
     public string ShippingRecipientName { get; private set; } = null!;
     public string ShippingPhoneNumber { get; private set; } = null!;

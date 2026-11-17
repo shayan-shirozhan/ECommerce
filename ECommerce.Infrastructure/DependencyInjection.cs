@@ -6,6 +6,7 @@ using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Payments;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Infrastructure.Persistence.Repositories;
+using Microsoft.Extensions.Options;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -91,6 +92,34 @@ public static class DependencyInjection
         services.AddScoped<IWishlistRepository, WishlistRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
         if (enableMockPaymentGateway)
-            services.AddScoped<IPaymentGateway, MockPaymentGateway>();
+            services.AddScoped<IMockPaymentGateway, MockPaymentGateway>();
+
+        var zarinPalSection = configuration.GetSection(ZarinPalOptions.SectionName);
+        if (zarinPalSection.GetValue<bool>(nameof(ZarinPalOptions.Enabled)))
+        {
+            services.AddOptions<ZarinPalOptions>()
+                .Bind(zarinPalSection)
+                .Validate(options => Guid.TryParse(options.MerchantId, out var merchantId) && merchantId != Guid.Empty,
+                    "ZarinPal MerchantId must be a valid non-empty GUID when the gateway is enabled.")
+                .Validate(options => IsHttpsUrl(options.ApiBaseUrl),
+                    "ZarinPal ApiBaseUrl must be a valid HTTPS URL.")
+                .Validate(options => IsHttpsUrl(options.PaymentPageBaseUrl),
+                    "ZarinPal PaymentPageBaseUrl must be a valid HTTPS URL.")
+                .Validate(options => IsHttpsUrl(options.CallbackUrl),
+                    "ZarinPal CallbackUrl must be a valid HTTPS URL.")
+                .Validate(options => options.TimeoutSeconds > 0,
+                    "ZarinPal TimeoutSeconds must be greater than zero.")
+                .ValidateOnStart();
+
+            services.AddHttpClient<IPaymentGateway, ZarinPalPaymentGateway>((provider, client) =>
+            {
+                var options = provider.GetRequiredService<IOptions<ZarinPalOptions>>().Value;
+                client.Timeout = TimeSpan.FromSeconds(options.TimeoutSeconds);
+            });
+        }
     }
+
+    private static bool IsHttpsUrl(string value)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+           uri.Scheme == Uri.UriSchemeHttps;
 }

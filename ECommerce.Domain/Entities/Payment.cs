@@ -26,6 +26,7 @@ public class Payment : AuditableEntity
 
     public Guid OrderId { get; private set; }
     public uint RowVersion { get; private set; }
+    /// <summary>Payment amount, stored in Toman.</summary>
     public decimal Amount { get; private set; }
     public PaymentStatus Status { get; private set; }
     public PaymentMethod PaymentMethod { get; private set; }

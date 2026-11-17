@@ -753,21 +753,35 @@ Authorization: Bearer {{CustomerToken}}
 
 ### Initiate Payment (Customer)
 
-# Replace OrderId with an order owned by the authenticated customer.
-# The order must be Pending, or AwaitingPayment after a failed/cancelled attempt, and have a positive total amount.
-
+# Real ZarinPal payment initiation.
+# Configure ZarinPal__Enabled, MerchantId, API URLs and CallbackUrl first.
+# Application payment amounts are in Toman; the gateway converts them to Rials.
+# The response includes RedirectUrl; send the customer to that URL.
 POST {{ECommerce_API_HostAddress}}/api/payments/orders/{{OrderId}}/initiate
 Accept: application/json
 Authorization: Bearer {{CustomerToken}}
 
 ###
 
-### Complete Mock Payment (Development only)
+### Initiate Mock Payment (Development only)
 # This endpoint is not mapped when ASPNETCORE_ENVIRONMENT=Production.
-# Replace PaymentId with the id returned by the initiate endpoint.
+POST {{ECommerce_API_HostAddress}}/api/payments/orders/{{OrderId}}/initiate-mock
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
+### Complete Mock Payment (Development only)
+# Replace PaymentId with the id returned by initiate-mock.
 POST {{ECommerce_API_HostAddress}}/api/payments/{{PaymentId}}/complete-mock
 Accept: application/json
 Authorization: Bearer {{CustomerToken}}
+
+###
+
+### ZarinPal callback (provider/browser return; normally called by redirect)
+GET {{ECommerce_API_HostAddress}}/api/payments/zarinpal/callback?paymentId={{PaymentId}}&Authority={{ZarinPalAuthority}}&Status=OK
+Accept: application/json
 
 ###
 

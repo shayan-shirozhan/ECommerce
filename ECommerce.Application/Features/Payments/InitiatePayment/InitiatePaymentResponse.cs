@@ -7,4 +7,5 @@ public sealed record InitiatePaymentResponse(
     Guid OrderId,
     decimal Amount,
     PaymentMethod PaymentMethod,
-    PaymentStatus Status);
+    PaymentStatus Status,
+    string? RedirectUrl);
