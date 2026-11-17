@@ -1,13 +1,20 @@
 namespace ECommerce.Application.Abstractions.Payments;
 
+/// <summary>
+/// Server-to-server payment operations for a real payment provider.
+/// </summary>
 public interface IPaymentGateway
 {
-    /// <summary>
-    /// Processes the payment. Implementations backed by a real provider must use
-    /// paymentId as the provider's idempotency key so retries cannot charge twice.
-    /// </summary>
-    Task<PaymentGatewayResult> ProcessAsync(
+    string GetPaymentUrl(string authority);
+
+    Task<PaymentGatewayRequestResult> RequestPaymentAsync(
         Guid paymentId,
+        Guid orderId,
         decimal amount,
+        CancellationToken cancellationToken = default);
+
+    Task<PaymentGatewayVerificationResult> VerifyPaymentAsync(
+        decimal amount,
+        string authority,
         CancellationToken cancellationToken = default);
 }

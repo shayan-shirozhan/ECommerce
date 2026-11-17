@@ -12,7 +12,7 @@ namespace ECommerce.Application.Features.Payments.CompleteMockPayment;
 public sealed class CompleteMockPaymentCommandHandler(
     ICurrentUser currentUser,
     IOrderRepository orderRepository,
-    IPaymentGateway paymentGateway,
+    IMockPaymentGateway paymentGateway,
     IOptions<OrderExpirationOptions> expirationOptions,
     IUnitOfWork unitOfWork)
     : IRequestHandler<CompleteMockPaymentCommand, CompleteMockPaymentResponse>

@@ -67,6 +67,16 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
                 exception.Message,
                 context.RequestAborted);
         }
+        catch (PaymentGatewayException exception)
+        {
+            logger.LogWarning(exception, "Payment gateway operation failed.");
+            await WriteProblemDetailsAsync(
+                context,
+                StatusCodes.Status502BadGateway,
+                "Payment gateway error.",
+                exception.Message,
+                context.RequestAborted);
+        }
         catch (UnauthorizedException exception)
         {
             await WriteProblemDetailsAsync(

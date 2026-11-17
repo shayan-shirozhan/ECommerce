@@ -203,6 +203,25 @@ app.MapControllers();
 // The mock payment completion endpoint and gateway do not exist outside Development.
 if (app.Environment.IsDevelopment())
 {
+    app.MapPost("/api/payments/orders/{orderId:guid}/initiate-mock",
+        async (Guid orderId, MediatR.ISender sender, CancellationToken cancellationToken) =>
+        {
+            var result = await sender.Send(
+                new ECommerce.Application.Features.Payments.InitiatePayment.InitiatePaymentCommand(
+                    orderId,
+                    ECommerce.Domain.Enums.PaymentMethod.Mock),
+                cancellationToken);
+
+            return Results.Ok(result);
+        })
+        .RequireAuthorization()
+        .WithTags("Development Payments")
+        .WithName("InitiateMockPayment")
+        .Produces<ECommerce.Application.Features.Payments.InitiatePayment.InitiatePaymentResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status401Unauthorized)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status409Conflict);
+
     app.MapPost("/api/payments/{paymentId:guid}/complete-mock",
         async (Guid paymentId, MediatR.ISender sender, CancellationToken cancellationToken) =>
         {

@@ -50,3 +50,23 @@ Normal API startup continues to ensure the application roles exist. It does not 
 - `GET /health/ready` – readiness; returns unhealthy when PostgreSQL cannot be reached.
 
 Both endpoints are anonymous so container orchestrators and load balancers can probe them.
+
+
+## ZarinPal payment gateway
+
+The real payment gateway is disabled by default. Enable it with deployment environment variables; never commit a merchant ID or payment credentials. The callback URL must be publicly reachable over HTTPS and must point to `/api/payments/zarinpal/callback`.
+
+Required settings when `ZarinPal__Enabled=true`:
+
+- `ZarinPal__MerchantId`: non-empty merchant UUID.
+- `ZarinPal__ApiBaseUrl`: provider API root (use the provider's sandbox host for tests).
+- `ZarinPal__PaymentPageBaseUrl`: provider payment-page root, ending in `/pg/StartPay`.
+- `ZarinPal__CallbackUrl`: public HTTPS callback URL. The application appends `paymentId` to it.
+
+The application's canonical monetary unit is **Toman**. `SellerOffer.Price`, order item prices and totals, order totals, and payment amounts are all stored and exchanged by the application in Toman. The ZarinPal v4 adapter converts Toman to Rials (multiply by 10) only when creating or verifying a provider payment. No other application layer should perform this conversion.
+
+Before deploying this change against a database containing existing business data, verify that its stored prices and totals are already interpreted as Toman. If any existing values were entered as Rials, migrate or normalize those values before enabling the gateway; do not try to compensate with a runtime setting. The adapter rejects amounts that cannot be represented as a whole number of Rials.
+
+For the provider flow, `POST /api/payments/orders/{orderId}/initiate` creates a local payment, requests an Authority, stores it, and returns `RedirectUrl`. The public callback uses only the saved payment amount and Authority and verifies them server-to-server before confirming an `OK` payment. A provider callback with `Status=NOK` is recorded as a failed attempt without calling Verify, in line with the ZarinPal integration guide. Failed attempts leave the order awaiting payment and permit a new payment attempt. Verification codes `100` and `101` are treated as successful; the returned `ref_id` is persisted.
+
+The mock initiation/completion endpoints are mapped only in Development.

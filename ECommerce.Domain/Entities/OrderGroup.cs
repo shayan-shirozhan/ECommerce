@@ -25,6 +25,7 @@ public class OrderGroup : AuditableEntity
     public Guid OrderId { get; private set; }
     public Guid SellerId { get; private set; }
     public OrderGroupStatus Status { get; private set; }
+    /// <summary>Seller group's total, stored in Toman.</summary>
     public decimal TotalAmount { get; private set; }
 
     private readonly List<OrderItem> _items = [];
