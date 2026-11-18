@@ -1,9 +1,26 @@
 using ECommerce.Domain.Entities;
+using ECommerce.Domain.Enums;
 
 namespace ECommerce.Application.Abstractions.Persistence;
 
 public interface IOrderRepository
 {
+    Task<IReadOnlyList<AdminOrderListItemData>> GetAdminPageAsync(
+        int page,
+        int pageSize,
+        OrderStatus? status = null,
+        DateTime? createdFromUtc = null,
+        DateTime? createdToUtc = null,
+        CancellationToken cancellationToken = default);
+
+    Task<int> CountAdminAsync(
+        OrderStatus? status = null,
+        DateTime? createdFromUtc = null,
+        DateTime? createdToUtc = null,
+        CancellationToken cancellationToken = default);
+
+    Task<Order?> GetByIdForAdminAsync(Guid orderId, CancellationToken cancellationToken = default);
+
     Task AddAsync(Order order, CancellationToken cancellationToken = default);
     Task<string?> GetSellerDisplayNameAsync(Guid sellerId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Order>> GetByUserIdAsync(Guid userId, CancellationToken cancellationToken = default);
