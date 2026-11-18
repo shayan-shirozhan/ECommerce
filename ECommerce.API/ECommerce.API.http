@@ -186,6 +186,27 @@ Content-Type: application/json
 
 ###
 
+### Get current user's profile
+
+GET {{ECommerce_API_HostAddress}}/api/users/me
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
+### Update current user's profile
+
+PUT {{ECommerce_API_HostAddress}}/api/users/me
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "firstName": "Updated",
+  "lastName": "Customer"
+}
+
+###
+
 ### Get Product
 
 GET {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}
