@@ -13,6 +13,10 @@ public interface IRefreshTokenService
     Task RevokeAsync(
         string refreshToken,
         CancellationToken cancellationToken = default);
+
+    Task RevokeAllForUserAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record RefreshTokenResult(string Token, DateTime ExpiresAtUtc);

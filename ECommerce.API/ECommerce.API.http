@@ -207,6 +207,19 @@ Authorization: Bearer {{CustomerToken}}
 
 ###
 
+### Change current user's password (revokes all refresh-token sessions)
+
+PUT {{ECommerce_API_HostAddress}}/api/users/me/password
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "currentPassword": "Password123!",
+  "newPassword": "NewPassword123!"
+}
+
+###
+
 ### Get Product
 
 GET {{ECommerce_API_HostAddress}}/api/products/{{ProductId}}
