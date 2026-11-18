@@ -6,6 +6,7 @@ The API integration suite boots the real ASP.NET Core application with `WebAppli
 
 - `ASPNETCORE_ENVIRONMENT` is set to `Development` so the normal application startup applies migrations and seeds the standard roles, admin, seller, brand, and category.
 - The test host sets the API project as its content root, overrides `ConnectionStrings:ECommerceDb` with the Testcontainers connection string, and uses a test-only JWT signing key (no machine user-secrets dependency).
+- The fixture sets bootstrap environment variables before `CreateClient`, because top-level `Program` reads the database and JWT configuration before the factory's in-memory configuration callback is applied. Original process environment values are restored during teardown.
 - The ZarinPal `IPaymentGateway` is replaced with a deterministic fake. No request is sent to a real payment provider.
 - The order-expiration and payment-reconciliation hosted services are removed from automatic host startup. Worker behavior is started explicitly by the test that exercises it.
 - Authentication endpoints that issue, rotate, or revoke refresh cookies receive `Origin: http://localhost`, as required by the production CSRF middleware.

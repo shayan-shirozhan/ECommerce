@@ -30,6 +30,7 @@ public sealed class ApiEndToEndTests : PostgresTestBase
     private const string SeededPassword = "Password123!";
     private const string CustomerPassword = "P@ssword123!";
 
+    private readonly Dictionary<string, string?> _originalBootstrapEnvironment = new(StringComparer.Ordinal);
     private ECommerceApiFactory _factory = null!;
     private HttpClient _client = null!;
     private FakeZarinPalPaymentGateway _paymentGateway = null!;
@@ -41,6 +42,10 @@ public sealed class ApiEndToEndTests : PostgresTestBase
     [OneTimeSetUp]
     public async Task StartApi()
     {
+        // Program reads configuration during top-level startup, before the factory's
+        // ConfigureAppConfiguration callback can override it. Seed those values first.
+        ConfigureBootstrapEnvironment();
+
         _paymentGateway = new FakeZarinPalPaymentGateway();
         _factory = new ECommerceApiFactory(ConnectionString, _paymentGateway);
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
@@ -129,9 +134,62 @@ public sealed class ApiEndToEndTests : PostgresTestBase
     [OneTimeTearDown]
     public async Task StopApi()
     {
-        _client?.Dispose();
-        if (_factory is not null)
-            await _factory.DisposeAsync();
+        try
+        {
+            _client?.Dispose();
+            if (_factory is not null)
+                await _factory.DisposeAsync();
+        }
+        finally
+        {
+            RestoreBootstrapEnvironment();
+        }
+    }
+
+    private void ConfigureBootstrapEnvironment()
+    {
+        SetBootstrapEnvironmentVariable("DOTNET_ENVIRONMENT", "Development");
+        SetBootstrapEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
+        SetBootstrapEnvironmentVariable("ConnectionStrings__ECommerceDb", ConnectionString);
+        SetBootstrapEnvironmentVariable("Jwt__SecretKey", ECommerceApiFactory.TestJwtSigningKey);
+        SetBootstrapEnvironmentVariable("Jwt__Issuer", "ECommerce.API");
+        SetBootstrapEnvironmentVariable("Jwt__Audience", "ECommerce.API");
+        SetBootstrapEnvironmentVariable("Jwt__ExpirationMinutes", "60");
+        SetBootstrapEnvironmentVariable("RefreshTokens__ExpirationDays", "30");
+        SetBootstrapEnvironmentVariable("ZarinPal__Enabled", "true");
+        SetBootstrapEnvironmentVariable("ZarinPal__MerchantId", "11111111-1111-1111-1111-111111111111");
+        SetBootstrapEnvironmentVariable("ZarinPal__ApiBaseUrl", "https://sandbox.zarinpal.com");
+        SetBootstrapEnvironmentVariable("ZarinPal__PaymentPageBaseUrl", "https://sandbox.zarinpal.com/pg/StartPay");
+        SetBootstrapEnvironmentVariable("ZarinPal__CallbackUrl", "https://api.test/api/payments/zarinpal/callback");
+        SetBootstrapEnvironmentVariable("ZarinPal__TimeoutSeconds", "15");
+        SetBootstrapEnvironmentVariable("Frontend__PaymentResultUrl", "https://frontend.test/payment-result");
+        SetBootstrapEnvironmentVariable("HttpsRedirection__Enabled", "false");
+        SetBootstrapEnvironmentVariable("Cors__AllowedOrigins__0", TestOrigin);
+        SetBootstrapEnvironmentVariable("RateLimiting__Auth__PermitLimit", "10000");
+        SetBootstrapEnvironmentVariable("RateLimiting__Auth__WindowSeconds", "60");
+        SetBootstrapEnvironmentVariable("PasswordResetEmail__FrontendUrl", "https://frontend.test/reset-password");
+        SetBootstrapEnvironmentVariable("PasswordResetEmail__TokenLifespanMinutes", "30");
+        SetBootstrapEnvironmentVariable("OrderExpiration__PaymentWindowMinutes", "30");
+        SetBootstrapEnvironmentVariable("OrderExpiration__ScanIntervalSeconds", "60");
+        SetBootstrapEnvironmentVariable("OrderExpiration__ReconciliationIntervalSeconds", "120");
+        SetBootstrapEnvironmentVariable("OrderExpiration__MaxVerificationAttempts", "5");
+        SetBootstrapEnvironmentVariable("OrderExpiration__MaxVerificationAgeMinutes", "20");
+    }
+
+    private void SetBootstrapEnvironmentVariable(string name, string value)
+    {
+        if (!_originalBootstrapEnvironment.ContainsKey(name))
+            _originalBootstrapEnvironment.Add(name, Environment.GetEnvironmentVariable(name));
+
+        Environment.SetEnvironmentVariable(name, value);
+    }
+
+    private void RestoreBootstrapEnvironment()
+    {
+        foreach (var (name, value) in _originalBootstrapEnvironment)
+            Environment.SetEnvironmentVariable(name, value);
+
+        _originalBootstrapEnvironment.Clear();
     }
 
     [Test]

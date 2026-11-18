@@ -26,7 +26,7 @@ public sealed class ECommerceApiFactory(
     string connectionString,
     IPaymentGateway paymentGateway) : WebApplicationFactory<Program>
 {
-    private const string TestJwtSigningKey = "ECommerce.Api.Integration.Tests.Signing.Key.2026!";
+    internal const string TestJwtSigningKey = "ECommerce.Api.Integration.Tests.Signing.Key.2026!";
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
