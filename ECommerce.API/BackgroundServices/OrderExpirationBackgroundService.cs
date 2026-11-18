@@ -55,7 +55,7 @@ public sealed class OrderExpirationBackgroundService(
     {
         var nowUtc = DateTime.UtcNow;
         var cutoffUtc = nowUtc.Subtract(_paymentWindow);
-        var verificationRetryCutoffUtc = nowUtc.Subtract(PaymentGatewayRetryPolicy.RetryDelay);
+        var retryCutoffUtc = nowUtc.Subtract(PaymentGatewayRetryPolicy.RetryDelay);
 
         IReadOnlyList<Guid> expiredOrderIds;
 
@@ -66,7 +66,7 @@ public sealed class OrderExpirationBackgroundService(
 
             expiredOrderIds = await orderRepository.GetExpiredOrderIdsAsync(
                 cutoffUtc,
-                verificationRetryCutoffUtc,
+                retryCutoffUtc,
                 MaxOrdersPerCycle,
                 cancellationToken);
         }

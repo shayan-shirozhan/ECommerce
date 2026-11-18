@@ -12,4 +12,5 @@ public sealed record AdminOrderListItemData(
     DateTime CreatedAt,
     decimal TotalAmount,
     int OrderGroupCount,
-    int ItemCount);
+    int ItemCount,
+    bool HasPaymentRequiringManualReview);

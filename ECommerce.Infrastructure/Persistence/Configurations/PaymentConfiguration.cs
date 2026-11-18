@@ -16,7 +16,13 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.Authority).HasMaxLength(100);
         builder.Property(x => x.LastGatewayRequestStartedAt)
             .HasColumnType("timestamp with time zone");
+        builder.Property(x => x.FirstVerificationAttemptedAt)
+            .HasColumnType("timestamp with time zone");
         builder.Property(x => x.LastVerificationAttemptedAt)
+            .HasColumnType("timestamp with time zone");
+        builder.Property(x => x.VerificationAttemptCount).HasDefaultValue(0).IsRequired();
+        builder.Property(x => x.LastVerificationErrorCode).HasMaxLength(50);
+        builder.Property(x => x.ManualReviewRequiredAt)
             .HasColumnType("timestamp with time zone");
         builder.Property(x => x.TransactionId).HasMaxLength(200);
         builder.Property(x => x.GatewayReference).HasMaxLength(200);
@@ -33,7 +39,7 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.HasIndex(x => x.OrderId, "IX_Payments_OrderId_Active")
             .IsUnique()
             .HasDatabaseName("IX_Payments_OrderId_Active")
-            .HasFilter("\"Status\" IN (1, 2)");
+            .HasFilter("\"Status\" IN (1, 2, 6)");
 
         builder.HasIndex(x => x.Authority)
             .IsUnique()

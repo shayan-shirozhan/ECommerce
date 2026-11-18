@@ -46,10 +46,20 @@ public sealed class InitiatePaymentCommandHandler(
 
         var cutoffUtc = DateTime.UtcNow.Subtract(paymentWindow);
 
-        if (order.CreatedAt <= cutoffUtc)
+        // Each new Payment represents a new customer payment attempt and starts a
+        // fresh payment window. Internal retries of that same Payment do not extend it.
+        var paymentWindowAnchorUtc = order.Payments
+            .OrderByDescending(candidate => candidate.CreatedAt)
+            .Select(candidate => candidate.CreatedAt)
+            .FirstOrDefault();
+
+        if (paymentWindowAnchorUtc == default)
+            paymentWindowAnchorUtc = order.CreatedAt;
+
+        if (paymentWindowAnchorUtc <= cutoffUtc)
         {
             throw new BusinessRuleException(
-                "The payment window for this order has expired.");
+                "The payment window for the latest payment attempt has expired.");
         }
 
         var activePayment = order.Payments.SingleOrDefault(

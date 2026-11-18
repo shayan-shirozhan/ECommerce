@@ -2,6 +2,7 @@ using ECommerce.Application;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Orders.ExpireOrders;
+using ECommerce.Application.Options;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure;
@@ -173,8 +174,10 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
                 IsIndeterminate: true));
         using var provider = CreateProvider(gateway);
 
-        Assert.ThrowsAsync<PaymentGatewayException>(async () =>
-            await SendAsync(provider, seeded.OrderId, DateTime.UtcNow.AddMinutes(1)));
+        var processed = await SendAsync(
+            provider,
+            seeded.OrderId,
+            DateTime.UtcNow.AddMinutes(1));
 
         await using var context = CreateDbContext();
         var order = await context.Orders
@@ -184,12 +187,102 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
 
         Assert.Multiple(() =>
         {
+            Assert.That(processed, Is.False);
             Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
             Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
             Assert.That(order.Payments.Single().LastVerificationAttemptedAt, Is.Not.Null);
             Assert.That(offer.Stock, Is.EqualTo(8));
             Assert.That(gateway.CallCount, Is.EqualTo(1));
         });
+    }
+
+    [Test]
+    public async Task Handle_should_keep_stock_reserved_and_mark_manual_review_after_maximum_indeterminate_attempts()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalOrderAsync(authority, priorVerificationAttempts: 4);
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayVerificationResult(false, false, null, "-50", "Amount mismatch", IsIndeterminate: true));
+        using var provider = CreateProvider(gateway);
+
+        var processed = await SendAsync(provider, seeded.OrderId, DateTime.UtcNow.AddMinutes(1));
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await context.SellerOffers.SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.False);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(5));
+            Assert.That(order.Payments.Single().LastVerificationErrorCode, Is.EqualTo("-50"));
+            Assert.That(offer.Stock, Is.EqualTo(8));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_require_manual_review_when_verification_age_limit_is_reached()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalOrderAsync(
+            authority,
+            DateTime.UtcNow.AddMinutes(-21));
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayVerificationResult(false, false, null, "503", "Unknown result", IsIndeterminate: true));
+        using var provider = CreateProvider(gateway);
+
+        var processed = await SendAsync(provider, seeded.OrderId, DateTime.UtcNow.AddMinutes(1));
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await context.SellerOffers.SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.False);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(offer.Stock, Is.EqualTo(8));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task GetExpiredOrderIdsAsync_should_use_latest_payment_created_at_as_expiration_anchor()
+    {
+        var seeded = await SeedOrderAsync();
+
+        await using (var context = CreateDbContext())
+        {
+            var order = await context.Orders
+                .Include(entity => entity.Groups)
+                .ThenInclude(group => group.Items)
+                .Include(entity => entity.Payments)
+                .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+            context.Entry(order).Property(entity => entity.CreatedAt).CurrentValue = DateTime.UtcNow.AddMinutes(-31);
+            order.InitiatePayment(PaymentMethod.ZarinPal).SetAuthority($"A{Guid.NewGuid():N}");
+            await context.SaveChangesAsync();
+        }
+
+        await using var queryContext = CreateDbContext();
+        var repository = new OrderRepository(queryContext);
+        var nowUtc = DateTime.UtcNow;
+        var expiredIds = await repository.GetExpiredOrderIdsAsync(
+            nowUtc.Subtract(TimeSpan.FromMinutes(30)),
+            nowUtc.Subtract(PaymentGatewayRetryPolicy.RetryDelay),
+            take: 100);
+
+        Assert.That(expiredIds, Does.Not.Contain(seeded.OrderId));
     }
 
     [Test]
@@ -220,6 +313,116 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
             Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
             Assert.That(gateway.CallCount, Is.Zero);
         });
+    }
+
+    [Test]
+    public async Task Handle_should_not_expire_order_while_gateway_request_lease_is_active_without_authority()
+    {
+        var seeded = await SeedOrderAsync();
+
+        await using (var context = CreateDbContext())
+        {
+            var order = await context.Orders
+                .Include(entity => entity.Groups)
+                .ThenInclude(group => group.Items)
+                .Include(entity => entity.Payments)
+                .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+            var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+            payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddSeconds(-30));
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider();
+        var processed = await SendAsync(
+            provider,
+            seeded.OrderId,
+            DateTime.UtcNow.AddMinutes(1));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await verificationContext.SellerOffers
+            .SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.False);
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(persistedOrder.Payments.Single().Authority, Is.Null);
+            Assert.That(offer.Stock, Is.EqualTo(8));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_cancel_zarinpal_payment_without_authority_after_gateway_request_lease_expires()
+    {
+        var seeded = await SeedOrderAsync();
+
+        await using (var context = CreateDbContext())
+        {
+            var order = await context.Orders
+                .Include(entity => entity.Groups)
+                .ThenInclude(group => group.Items)
+                .Include(entity => entity.Payments)
+                .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+            var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+            payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddMinutes(-3));
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider();
+        var processed = await SendAsync(
+            provider,
+            seeded.OrderId,
+            DateTime.UtcNow.AddMinutes(1));
+
+        await using var verificationContext = CreateDbContext();
+        var orderAfterExpiration = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var offer = await verificationContext.SellerOffers
+            .SingleAsync(entity => entity.Id == seeded.OfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(processed, Is.True);
+            Assert.That(orderAfterExpiration.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(orderAfterExpiration.Payments.Single().Status, Is.EqualTo(PaymentStatus.Cancelled));
+            Assert.That(offer.Stock, Is.EqualTo(10));
+        });
+    }
+
+    [Test]
+    public async Task GetExpiredOrderIdsAsync_should_skip_orders_with_recent_gateway_request_without_authority()
+    {
+        var seeded = await SeedOrderAsync();
+
+        await using (var context = CreateDbContext())
+        {
+            var order = await context.Orders
+                .Include(entity => entity.Groups)
+                .ThenInclude(group => group.Items)
+                .Include(entity => entity.Payments)
+                .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+            var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+            payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddSeconds(-30));
+            await context.SaveChangesAsync();
+        }
+
+        await using var queryContext = CreateDbContext();
+        var repository = new OrderRepository(queryContext);
+        var nowUtc = DateTime.UtcNow;
+        var result = await repository.GetExpiredOrderIdsAsync(
+            nowUtc.AddMinutes(1),
+            nowUtc.Subtract(PaymentGatewayRetryPolicy.RetryDelay),
+            take: 100);
+
+        Assert.That(result, Does.Not.Contain(seeded.OrderId));
     }
 
     [Test]
@@ -423,7 +626,8 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
 
     private async Task<SeededOrder> SeedZarinPalOrderAsync(
         string authority,
-        DateTime? lastVerificationAttemptedAt = null)
+        DateTime? lastVerificationAttemptedAt = null,
+        int priorVerificationAttempts = 0)
     {
         var seeded = await SeedOrderAsync();
 
@@ -437,6 +641,10 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
         var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
         payment.MarkGatewayRequestStarted(DateTime.UtcNow.AddMinutes(-3));
         payment.SetAuthority(authority);
+        for (var attempt = priorVerificationAttempts; attempt > 0; attempt--)
+        {
+            payment.MarkVerificationAttempted(DateTime.UtcNow.AddMinutes(-attempt * 3));
+        }
 
         if (lastVerificationAttemptedAt.HasValue)
             payment.MarkVerificationAttempted(lastVerificationAttemptedAt.Value);
@@ -471,6 +679,8 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
         configuration["Jwt:Audience"] = "ECommerce.Tests";
         configuration["Jwt:ExpirationMinutes"] = "60";
         configuration["Jwt:SecretKey"] = new string('t', 32);
+        configuration["OrderExpiration:MaxVerificationAttempts"] = "5";
+        configuration["OrderExpiration:MaxVerificationAgeMinutes"] = "20";
 
         var services = new ServiceCollection();
 
@@ -480,6 +690,9 @@ public sealed class ExpireOrderCommandHandlerTests : PostgresTestBase
 
         if (paymentGateway is not null)
             services.AddSingleton<IPaymentGateway>(paymentGateway);
+
+        services.Configure<OrderExpirationOptions>(
+            configuration.GetSection(OrderExpirationOptions.SectionName));
 
         return services.BuildServiceProvider();
     }

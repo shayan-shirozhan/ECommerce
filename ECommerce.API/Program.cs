@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using ECommerce.API.BackgroundServices;
 using ECommerce.API.HealthChecks;
 using ECommerce.API.Middleware;
+using ECommerce.API.Options;
 using ECommerce.Application;
 using ECommerce.Application.Features.Payments.CompleteMockPayment;
 using ECommerce.Application.Options;
@@ -23,6 +24,7 @@ var builderArgs = args
     .Where(argument => !string.Equals(argument, "--bootstrap-admin", StringComparison.OrdinalIgnoreCase))
     .ToArray();
 var builder = WebApplication.CreateBuilder(builderArgs);
+var zarinPalEnabled = builder.Configuration.GetValue<bool>("ZarinPal:Enabled");
 
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
@@ -38,6 +40,17 @@ builder.Services.AddInfrastructure(
     enableMockPaymentGateway: builder.Environment.IsDevelopment(),
     enableDevelopmentEmailSender: builder.Environment.IsDevelopment());
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();
+if (zarinPalEnabled)
+    builder.Services.AddHostedService<ZarinPalPaymentReconciliationBackgroundService>();
+
+builder.Services.AddOptions<FrontendOptions>()
+    .Bind(builder.Configuration.GetSection(FrontendOptions.SectionName))
+    .Validate(options => !zarinPalEnabled ||
+                         Uri.TryCreate(options.PaymentResultUrl, UriKind.Absolute, out var uri) &&
+                         (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) &&
+                         string.IsNullOrEmpty(uri.UserInfo),
+        "Frontend:PaymentResultUrl must be an absolute HTTP or HTTPS URL when ZarinPal is enabled.")
+    .ValidateOnStart();
 
 var allowedOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
@@ -111,6 +124,12 @@ builder.Services
         "PaymentWindowMinutes must be greater than zero.")
     .Validate(options => options.ScanIntervalSeconds > 0,
         "ScanIntervalSeconds must be greater than zero.")
+    .Validate(options => options.ReconciliationIntervalSeconds >= 30,
+        "ReconciliationIntervalSeconds must be at least 30 seconds.")
+    .Validate(options => options.MaxVerificationAttempts > 0,
+        "MaxVerificationAttempts must be greater than zero.")
+    .Validate(options => options.MaxVerificationAgeMinutes > 0,
+        "MaxVerificationAgeMinutes must be greater than zero.")
     .ValidateOnStart();
 
 var app = builder.Build();

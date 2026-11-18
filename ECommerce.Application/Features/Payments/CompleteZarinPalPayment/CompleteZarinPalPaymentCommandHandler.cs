@@ -1,6 +1,7 @@
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
+using ECommerce.Application.Features.Payments.Shared;
 using ECommerce.Domain.Enums;
 using MediatR;
 
@@ -8,8 +9,8 @@ namespace ECommerce.Application.Features.Payments.CompleteZarinPalPayment;
 
 public sealed class CompleteZarinPalPaymentCommandHandler(
     IOrderRepository orderRepository,
-    IEnumerable<IPaymentGateway> paymentGateways,
-    IUnitOfWork unitOfWork)
+    IUnitOfWork unitOfWork,
+    ZarinPalPaymentVerifier paymentVerifier)
     : IRequestHandler<CompleteZarinPalPaymentCommand, CompleteZarinPalPaymentResponse>
 {
     public async Task<CompleteZarinPalPaymentResponse> Handle(
@@ -55,63 +56,36 @@ public sealed class CompleteZarinPalPaymentCommandHandler(
 
         if (string.Equals(callbackStatus, "NOK", StringComparison.OrdinalIgnoreCase))
         {
-            // ZarinPal documents NOK as a cancelled/unsuccessful attempt and instructs
-            // merchants not to call Verify for it. A failed attempt leaves the order
-            // open for a new payment attempt.
+            // A NOK callback must not race with an OK callback or background Verify
+            // request that already owns the persisted two-minute verification lease.
+            // After any Verify attempt, a later NOK callback is no longer authoritative
+            // enough to settle the uncertain result; the server-side worker must Verify again.
+            if (payment.VerificationAttemptCount > 0 ||
+                !PaymentGatewayRetryPolicy.CanRetry(payment.LastVerificationAttemptedAt, DateTime.UtcNow))
+            {
+                return CreateResponse(order.Id, payment, order.Status, isSuccessful: false, alreadyProcessed: true);
+            }
+
+            // ZarinPal documents an initial NOK callback as a cancelled/unsuccessful
+            // attempt and instructs merchants not to call Verify for it. A failed attempt
+            // leaves the order open for a new payment attempt.
             payment.MarkFailed();
+            await unitOfWork.SaveChangesAsync(cancellationToken);
         }
         else
         {
-            // Status=OK from the browser is not proof of payment. Verify the saved
-            // authority and the amount loaded from our database on the provider server.
-            var paymentGateway = paymentGateways.SingleOrDefault()
-                ?? throw new PaymentGatewayException(
-                    "ZarinPal payment gateway is not configured.");
+            // Status=OK from the browser is not proof of payment. The shared verifier
+            // checks the saved authority and the amount loaded from our database.
+            var outcome = await paymentVerifier.VerifyAsync(order, payment, cancellationToken);
+            var alreadyProcessed = outcome == ZarinPalVerificationOutcome.Skipped;
 
-            if (!PaymentGatewayRetryPolicy.CanRetry(
-                    payment.LastVerificationAttemptedAt,
-                    DateTime.UtcNow))
-            {
-                throw new BusinessRuleException(
-                    "Payment verification was recently attempted. Please retry in two minutes.");
-            }
-
-            payment.MarkVerificationAttempted(DateTime.UtcNow);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-
-            var verification = await paymentGateway.VerifyPaymentAsync(
-                payment.Amount,
-                payment.Authority!,
-                cancellationToken);
-
-            if (verification.IsSuccessful)
-            {
-                if (verification.RefId is not > 0)
-                {
-                    throw new PaymentGatewayException(
-                        "ZarinPal reported a successful verification without a valid reference ID. " +
-                        "The payment remains pending for reconciliation.");
-                }
-
-                payment.MarkSuccessful(refId: verification.RefId.Value);
-                order.Confirm();
-            }
-            else if (verification.IsIndeterminate)
-            {
-                // Do not let a timeout, provider outage, malformed response or unknown
-                // provider code turn a potentially paid order into a failed payment.
-                // A repeated callback can safely ask ZarinPal to verify the same authority
-                // after the persisted verification retry delay.
-                throw new PaymentGatewayException(
-                    "ZarinPal could not determine the payment outcome. The payment remains pending.");
-            }
-            else
-            {
-                payment.MarkFailed();
-            }
+            return CreateResponse(
+                order.Id,
+                payment,
+                order.Status,
+                isSuccessful: payment.Status == PaymentStatus.Successful,
+                alreadyProcessed);
         }
-
-        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return CreateResponse(
             order.Id,

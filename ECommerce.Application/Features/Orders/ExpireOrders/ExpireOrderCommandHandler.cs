@@ -1,6 +1,6 @@
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
-using ECommerce.Application.Exceptions;
+using ECommerce.Application.Features.Payments.Shared;
 using ECommerce.Domain.Enums;
 using MediatR;
 
@@ -9,8 +9,8 @@ namespace ECommerce.Application.Features.Orders.ExpireOrders;
 public sealed class ExpireOrderCommandHandler(
     IOrderRepository orderRepository,
     ISellerOfferRepository sellerOfferRepository,
-    IEnumerable<IPaymentGateway> paymentGateways,
-    IUnitOfWork unitOfWork)
+    IUnitOfWork unitOfWork,
+    ZarinPalPaymentVerifier paymentVerifier)
     : IRequestHandler<ExpireOrderCommand, bool>
 {
     public async Task<bool> Handle(
@@ -25,6 +25,33 @@ public sealed class ExpireOrderCommandHandler(
         if (order is null)
             return false;
 
+        // An uncertain payment must never be turned into an order cancellation.
+        if (order.Payments.Any(payment => payment.Status == PaymentStatus.RequiresManualReview))
+            return false;
+
+        var pendingZarinPalRequest = order.Payments.SingleOrDefault(payment =>
+            payment.Status == PaymentStatus.Pending &&
+            payment.PaymentMethod == PaymentMethod.ZarinPal &&
+            string.IsNullOrWhiteSpace(payment.Authority));
+
+        // Do not release reserved stock while a checkout-session request may still be
+        // completing. Once its lease expires, there is no Authority to verify and the
+        // payment attempt can be expired normally.
+        if (pendingZarinPalRequest is not null)
+        {
+            if (!PaymentGatewayRetryPolicy.CanRetry(
+                    pendingZarinPalRequest.LastGatewayRequestStartedAt,
+                    DateTime.UtcNow))
+            {
+                return false;
+            }
+
+            // No Authority was persisted and the request lease has expired. The
+            // checkout URL was never returned to the customer, so close this local
+            // attempt before the domain aggregate permits order cancellation.
+            pendingZarinPalRequest.Cancel();
+        }
+
         var pendingZarinPalPayment = order.Payments.SingleOrDefault(payment =>
             payment.Status == PaymentStatus.Pending &&
             payment.PaymentMethod == PaymentMethod.ZarinPal &&
@@ -32,52 +59,16 @@ public sealed class ExpireOrderCommandHandler(
 
         if (pendingZarinPalPayment is not null)
         {
-            if (!PaymentGatewayRetryPolicy.CanRetry(
-                    pendingZarinPalPayment.LastVerificationAttemptedAt,
-                    DateTime.UtcNow))
-            {
-                return false;
-            }
-
-            // Persist the reconciliation lease before resolving/calling the gateway.
-            // This also prevents a missing or misconfigured gateway from letting the
-            // same oldest orders monopolize every background-service batch.
-            pendingZarinPalPayment.MarkVerificationAttempted(DateTime.UtcNow);
-            await unitOfWork.SaveChangesAsync(cancellationToken);
-
-            var paymentGateway = paymentGateways.SingleOrDefault()
-                ?? throw new PaymentGatewayException(
-                    "ZarinPal is required to reconcile this pending payment before its order can expire.");
-
-            var verification = await paymentGateway.VerifyPaymentAsync(
-                pendingZarinPalPayment.Amount,
-                pendingZarinPalPayment.Authority!,
+            var outcome = await paymentVerifier.VerifyAsync(
+                order,
+                pendingZarinPalPayment,
                 cancellationToken);
 
-            if (verification.IsSuccessful)
-            {
-                if (verification.RefId is not > 0)
-                {
-                    throw new PaymentGatewayException(
-                        "ZarinPal reported a successful verification without a valid reference ID. " +
-                        "The order remains awaiting reconciliation.");
-                }
-
-                pendingZarinPalPayment.MarkSuccessful(refId: verification.RefId.Value);
-                order.Confirm();
-                await unitOfWork.SaveChangesAsync(cancellationToken);
+            // Only a definitive provider failure permits expiration to continue.
+            // Successful, skipped (active lease), indeterminate, and manual-review
+            // outcomes must retain the order and its reserved stock.
+            if (outcome != ZarinPalVerificationOutcome.Failed)
                 return false;
-            }
-
-            if (verification.IsIndeterminate)
-            {
-                // Keep both the order and reserved stock intact until the provider
-                // confirms success or a definitive failure can be established.
-                throw new PaymentGatewayException(
-                    "ZarinPal could not determine the payment outcome. The order remains pending reconciliation.");
-            }
-
-            pendingZarinPalPayment.MarkFailed();
         }
 
         await OrderCancellationProcessor.CancelAndRestoreAsync(

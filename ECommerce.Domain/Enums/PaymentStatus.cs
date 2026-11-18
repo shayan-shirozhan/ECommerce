@@ -1,4 +1,4 @@
-﻿namespace ECommerce.Domain.Enums;
+namespace ECommerce.Domain.Enums;
 
 public enum PaymentStatus
 {
@@ -6,5 +6,6 @@ public enum PaymentStatus
     Successful = 2,
     Failed = 3,
     Cancelled = 4,
-    Refunded = 5
+    Refunded = 5,
+    RequiresManualReview = 6
 }

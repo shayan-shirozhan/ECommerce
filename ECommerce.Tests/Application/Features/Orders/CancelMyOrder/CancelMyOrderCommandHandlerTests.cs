@@ -1,6 +1,8 @@
 using ECommerce.Application;
 using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Exceptions;
+using ECommerce.Application.Options;
 using ECommerce.Application.Features.Orders.CancelMyOrder;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
@@ -74,6 +76,174 @@ public sealed class CancelMyOrderCommandHandlerTests : PostgresTestBase
             Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Cancelled));
             Assert.That(firstOffer.Stock, Is.EqualTo(10));
             Assert.That(secondOffer.Stock, Is.EqualTo(10));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_cancel_zarinpal_order_only_after_definitive_minus_51()
+    {
+        var seeded = await SeedOrderAsync(
+            initiatePayment: true,
+            paymentMethod: PaymentMethod.ZarinPal,
+            assignAuthority: true);
+        var gateway = new FixedZarinPalGateway(new PaymentGatewayVerificationResult(
+            false, false, null, "-51", "Payment was not completed."));
+        using var provider = CreateProvider(seeded.BuyerId, gateway);
+
+        var response = await SendAsync(provider, seeded.OrderId);
+
+        await using var verificationContext = CreateDbContext();
+        var order = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var firstOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.FirstOfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.OrderStatus, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+            Assert.That(firstOffer.Stock, Is.EqualTo(10));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_not_cancel_zarinpal_order_when_verification_is_indeterminate()
+    {
+        var seeded = await SeedOrderAsync(
+            initiatePayment: true,
+            paymentMethod: PaymentMethod.ZarinPal,
+            assignAuthority: true);
+        var gateway = new FixedZarinPalGateway(new PaymentGatewayVerificationResult(
+            false, false, null, "-50", "Provider result is uncertain.", IsIndeterminate: true));
+        using var provider = CreateProvider(seeded.BuyerId, gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(async () => await SendAsync(provider, seeded.OrderId));
+
+        await using var verificationContext = CreateDbContext();
+        var order = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var firstOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.FirstOfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+            Assert.That(firstOffer.Stock, Is.EqualTo(8));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_not_cancel_zarinpal_order_when_verification_confirms_payment()
+    {
+        var seeded = await SeedOrderAsync(
+            initiatePayment: true,
+            paymentMethod: PaymentMethod.ZarinPal,
+            assignAuthority: true);
+        var gateway = new FixedZarinPalGateway(new PaymentGatewayVerificationResult(true, false, 987654321));
+        using var provider = CreateProvider(seeded.BuyerId, gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(async () => await SendAsync(provider, seeded.OrderId));
+
+        await using var verificationContext = CreateDbContext();
+        var order = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var firstOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.FirstOfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Successful));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+            Assert.That(firstOffer.Stock, Is.EqualTo(8));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_not_cancel_zarinpal_order_while_verification_lease_is_active()
+    {
+        var seeded = await SeedOrderAsync(
+            initiatePayment: true,
+            paymentMethod: PaymentMethod.ZarinPal,
+            assignAuthority: true,
+            verificationAttemptedAtUtc: DateTime.UtcNow.AddSeconds(-30));
+        var gateway = new FixedZarinPalGateway(new PaymentGatewayVerificationResult(true, false, 123456789));
+        using var provider = CreateProvider(seeded.BuyerId, gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(async () => await SendAsync(provider, seeded.OrderId));
+
+        await using var verificationContext = CreateDbContext();
+        var order = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_not_cancel_zarinpal_order_while_gateway_request_lease_is_active()
+    {
+        var seeded = await SeedOrderAsync(
+            initiatePayment: true,
+            paymentMethod: PaymentMethod.ZarinPal,
+            gatewayRequestStartedAtUtc: DateTime.UtcNow.AddSeconds(-30));
+        using var provider = CreateProvider(seeded.BuyerId);
+
+        Assert.ThrowsAsync<BusinessRuleException>(async () => await SendAsync(provider, seeded.OrderId));
+
+        await using var verificationContext = CreateDbContext();
+        var order = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var firstOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.FirstOfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(firstOffer.Stock, Is.EqualTo(8));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_cancel_zarinpal_payment_without_authority_after_gateway_request_lease_expires()
+    {
+        var seeded = await SeedOrderAsync(
+            initiatePayment: true,
+            paymentMethod: PaymentMethod.ZarinPal,
+            gatewayRequestStartedAtUtc: DateTime.UtcNow.AddMinutes(-3));
+        using var provider = CreateProvider(seeded.BuyerId);
+
+        var response = await SendAsync(provider, seeded.OrderId);
+
+        await using var verificationContext = CreateDbContext();
+        var order = await verificationContext.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var firstOffer = await verificationContext.SellerOffers
+            .SingleAsync(offer => offer.Id == seeded.FirstOfferId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.OrderStatus, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Cancelled));
+            Assert.That(firstOffer.Stock, Is.EqualTo(10));
         });
     }
 
@@ -233,7 +403,11 @@ public sealed class CancelMyOrderCommandHandlerTests : PostgresTestBase
 
     private async Task<SeededOrder> SeedOrderAsync(
         bool initiatePayment = false,
-        bool confirmPayment = false)
+        bool confirmPayment = false,
+        PaymentMethod paymentMethod = PaymentMethod.Mock,
+        bool assignAuthority = false,
+        DateTime? gatewayRequestStartedAtUtc = null,
+        DateTime? verificationAttemptedAtUtc = null)
     {
         var buyerId = Guid.NewGuid();
         var firstSellerId = Guid.NewGuid();
@@ -291,7 +465,13 @@ public sealed class CancelMyOrderCommandHandlerTests : PostgresTestBase
 
         if (initiatePayment)
         {
-            var payment = order.InitiatePayment();
+            var payment = order.InitiatePayment(paymentMethod);
+            if (paymentMethod == PaymentMethod.ZarinPal && gatewayRequestStartedAtUtc.HasValue)
+                payment.MarkGatewayRequestStarted(gatewayRequestStartedAtUtc.Value);
+            if (paymentMethod == PaymentMethod.ZarinPal && assignAuthority)
+                payment.SetAuthority($"A{Guid.NewGuid():N}");
+            if (paymentMethod == PaymentMethod.ZarinPal && verificationAttemptedAtUtc.HasValue)
+                payment.MarkVerificationAttempted(verificationAttemptedAtUtc.Value);
             if (confirmPayment)
             {
                 payment.MarkSuccessful($"cancel-test-txn-{Guid.NewGuid():N}");
@@ -335,7 +515,7 @@ public sealed class CancelMyOrderCommandHandlerTests : PostgresTestBase
         };
     }
 
-    private ServiceProvider CreateProvider(Guid? currentUserId)
+    private ServiceProvider CreateProvider(Guid? currentUserId, IPaymentGateway? paymentGateway = null)
     {
         var configuration = new ConfigurationManager();
         configuration["ConnectionStrings:ECommerceDb"] = ConnectionString;
@@ -349,6 +529,9 @@ public sealed class CancelMyOrderCommandHandlerTests : PostgresTestBase
         services.AddApplication();
         services.AddInfrastructure(configuration);
         services.AddScoped<ICurrentUser>(_ => new TestCurrentUser(currentUserId));
+        services.Configure<OrderExpirationOptions>(_ => { });
+        if (paymentGateway is not null)
+            services.AddSingleton<IPaymentGateway>(paymentGateway);
 
         return services.BuildServiceProvider();
     }
@@ -388,5 +571,31 @@ public sealed class CancelMyOrderCommandHandlerTests : PostgresTestBase
         public Guid? UserId { get; } = userId;
         public bool IsAuthenticated => UserId.HasValue;
         public bool IsInRole(string role) => false;
+    }
+
+    private sealed class FixedZarinPalGateway(PaymentGatewayVerificationResult verificationResult)
+        : IPaymentGateway
+    {
+        public int CallCount { get; private set; }
+
+        public string GetPaymentUrl(string authority) =>
+            $"https://www.zarinpal.com/pg/StartPay/{Uri.EscapeDataString(authority)}";
+
+        public Task<PaymentGatewayRequestResult> RequestPaymentAsync(
+            Guid paymentId,
+            Guid orderId,
+            decimal amount,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<PaymentGatewayVerificationResult> VerifyPaymentAsync(
+            decimal amount,
+            string authority,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CallCount++;
+            return Task.FromResult(verificationResult);
+        }
     }
 }

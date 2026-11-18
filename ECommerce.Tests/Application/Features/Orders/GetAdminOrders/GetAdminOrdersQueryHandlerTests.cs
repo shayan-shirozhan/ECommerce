@@ -103,6 +103,39 @@ public sealed class GetAdminOrdersQueryHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Handle_should_flag_orders_with_payment_requiring_manual_review()
+    {
+        var buyerId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = CreateOrder(buyerId, sellerId);
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.SetAuthority($"A{Guid.NewGuid():N}");
+        payment.MarkVerificationAttempted(DateTime.UtcNow.AddMinutes(-21));
+        payment.RecordVerificationOutcome("503");
+        payment.MarkRequiresManualReview();
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(buyerId, $"buyer-{suffix}", $"buyer-{suffix}@example.test", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", $"seller-{suffix}@example.test", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider();
+        var response = await SendAsync(provider, new GetAdminOrdersQuery());
+        var item = response.Items.Single(candidate => candidate.OrderId == order.Id);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(item.HasPaymentRequiringManualReview, Is.True);
+            Assert.That(item.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+        });
+    }
+
+    [Test]
     public async Task Handle_should_filter_by_status_and_inclusive_utc_date_range()
     {
         var suffix = Guid.NewGuid().ToString("N");

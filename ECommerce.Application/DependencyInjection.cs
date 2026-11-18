@@ -1,5 +1,5 @@
-﻿using ECommerce.Application.Behaviors;
-using ECommerce.Application.Features.Catalog.Products.GetProductById;
+using ECommerce.Application.Behaviors;
+using ECommerce.Application.Features.Payments.Shared;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -16,6 +16,7 @@ public static class DependencyInjection
         });
 
         services.AddValidatorsFromAssembly(typeof(DependencyInjection).Assembly);
+        services.AddScoped<ZarinPalPaymentVerifier>();
 
         return services;
     }

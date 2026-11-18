@@ -44,7 +44,12 @@ public interface IOrderRepository
 
     Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(
         DateTime cutoffUtc,
-        DateTime verificationRetryCutoffUtc,
+        DateTime retryCutoffUtc,
+        int take,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<PendingZarinPalPaymentData>> GetPendingZarinPalPaymentsForReconciliationAsync(
+        DateTime retryCutoffUtc,
         int take,
         CancellationToken cancellationToken = default);
 

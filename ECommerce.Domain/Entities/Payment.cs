@@ -36,8 +36,13 @@ public class Payment : AuditableEntity
     /// A pending payment without an authority can be retried after the request lease expires.
     /// </summary>
     public DateTime? LastGatewayRequestStartedAt { get; private set; }
+    /// <summary>The first time verification of this ZarinPal payment was attempted.</summary>
+    public DateTime? FirstVerificationAttemptedAt { get; private set; }
     /// <summary>The latest time verification of this ZarinPal payment was attempted.</summary>
     public DateTime? LastVerificationAttemptedAt { get; private set; }
+    public int VerificationAttemptCount { get; private set; }
+    public string? LastVerificationErrorCode { get; private set; }
+    public DateTime? ManualReviewRequiredAt { get; private set; }
     public long? RefId { get; private set; }
     public string? TransactionId { get; private set; }
     public string? GatewayReference { get; private set; }
@@ -80,7 +85,51 @@ public class Payment : AuditableEntity
         if (attemptedAtUtc.Kind != DateTimeKind.Utc)
             throw new DomainException("Payment verification attempt time must be UTC.");
 
+        FirstVerificationAttemptedAt ??= attemptedAtUtc;
         LastVerificationAttemptedAt = attemptedAtUtc;
+        VerificationAttemptCount = checked(VerificationAttemptCount + 1);
+    }
+
+    public bool HasReachedVerificationLimit(
+        DateTime nowUtc,
+        int maxAttempts,
+        TimeSpan maxAge)
+    {
+        if (nowUtc.Kind != DateTimeKind.Utc)
+            throw new DomainException("Current time must be UTC.");
+
+        if (maxAttempts <= 0)
+            throw new DomainException("Maximum verification attempts must be greater than zero.");
+
+        if (maxAge <= TimeSpan.Zero)
+            throw new DomainException("Maximum verification age must be greater than zero.");
+
+        return VerificationAttemptCount >= maxAttempts ||
+               FirstVerificationAttemptedAt is { } firstAttemptAtUtc &&
+               firstAttemptAtUtc <= nowUtc.Subtract(maxAge);
+    }
+
+    public void RecordVerificationOutcome(string? providerErrorCode)
+    {
+        if (Status != PaymentStatus.Pending)
+            throw new DomainException("Only pending payments can record a verification outcome.");
+
+        var normalizedErrorCode = providerErrorCode?.Trim();
+        LastVerificationErrorCode = string.IsNullOrEmpty(normalizedErrorCode)
+            ? null
+            : normalizedErrorCode[..Math.Min(normalizedErrorCode.Length, 50)];
+    }
+
+    public void MarkRequiresManualReview()
+    {
+        if (Status != PaymentStatus.Pending)
+            throw new DomainException("Only pending payments can require manual review.");
+
+        if (VerificationAttemptCount == 0)
+            throw new DomainException("A payment must be verified at least once before manual review.");
+
+        Status = PaymentStatus.RequiresManualReview;
+        ManualReviewRequiredAt = DateTime.UtcNow;
     }
 
     public void SetAuthority(string authority)

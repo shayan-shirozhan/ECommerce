@@ -63,7 +63,12 @@ public sealed class GetAdminOrderByIdQueryHandler(
                 payment.RefId,
                 payment.CreatedAt,
                 payment.PaidAt,
-                payment.FailedAt))
+                payment.FailedAt,
+                payment.VerificationAttemptCount,
+                payment.FirstVerificationAttemptedAt,
+                payment.LastVerificationAttemptedAt,
+                payment.LastVerificationErrorCode,
+                payment.ManualReviewRequiredAt))
             .ToList();
 
         return new GetAdminOrderByIdResponse(

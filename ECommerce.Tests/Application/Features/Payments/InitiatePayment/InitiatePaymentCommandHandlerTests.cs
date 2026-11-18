@@ -323,8 +323,9 @@ public sealed class InitiatePaymentCommandHandlerTests : PostgresTestBase
 
             context.Orders.Add(order);
 
-            context.Entry(order).Property(x => x.CreatedAt).CurrentValue =
-                DateTime.UtcNow.AddMinutes(-31);
+            var expiredAtUtc = DateTime.UtcNow.AddMinutes(-31);
+            context.Entry(order).Property(x => x.CreatedAt).CurrentValue = expiredAtUtc;
+            context.Entry(previousPayment).Property(x => x.CreatedAt).CurrentValue = expiredAtUtc;
 
             await context.SaveChangesAsync();
         }
