@@ -33,7 +33,8 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
                 order.CreatedAt,
                 order.TotalAmount,
                 order.Groups.Count(),
-                order.Groups.SelectMany(orderGroup => orderGroup.Items).Count()))
+                order.Groups.SelectMany(orderGroup => orderGroup.Items).Count(),
+                order.Payments.Any(payment => payment.Status == PaymentStatus.RequiresManualReview)))
             .Skip(offset)
             .Take(pageSize)
             .ToListAsync(cancellationToken);
@@ -218,7 +219,7 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
 
     public async Task<IReadOnlyList<Guid>> GetExpiredOrderIdsAsync(
         DateTime cutoffUtc,
-        DateTime verificationRetryCutoffUtc,
+        DateTime retryCutoffUtc,
         int take,
         CancellationToken cancellationToken = default)
     {
@@ -229,16 +230,51 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
             .AsNoTracking()
             .Where(order =>
                 order.CreatedAt <= cutoffUtc &&
+                !order.Payments.Any(payment => payment.CreatedAt > cutoffUtc) &&
                 (order.Status == OrderStatus.Pending ||
                  order.Status == OrderStatus.AwaitingPayment) &&
+                !order.Payments.Any(payment => payment.Status == PaymentStatus.RequiresManualReview) &&
                 !order.Payments.Any(payment =>
                     payment.Status == PaymentStatus.Pending &&
                     payment.PaymentMethod == PaymentMethod.ZarinPal &&
-                    payment.Authority != null &&
-                    payment.LastVerificationAttemptedAt > verificationRetryCutoffUtc))
+                    ((payment.Authority != null &&
+                      payment.LastVerificationAttemptedAt > retryCutoffUtc) ||
+                     (payment.Authority == null &&
+                      payment.LastGatewayRequestStartedAt > retryCutoffUtc))))
             .OrderBy(order => order.CreatedAt)
             .ThenBy(order => order.Id)
             .Select(order => order.Id)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PendingZarinPalPaymentData>> GetPendingZarinPalPaymentsForReconciliationAsync(
+        DateTime retryCutoffUtc,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        if (retryCutoffUtc.Kind != DateTimeKind.Utc)
+            throw new ArgumentException("Retry cutoff must be UTC.", nameof(retryCutoffUtc));
+
+        if (take <= 0)
+            throw new ArgumentOutOfRangeException(nameof(take));
+
+        return await dbContext.Payments
+            .AsNoTracking()
+            .Where(payment =>
+                payment.Status == PaymentStatus.Pending &&
+                payment.PaymentMethod == PaymentMethod.ZarinPal &&
+                payment.Authority != null &&
+                payment.LastVerificationAttemptedAt != null &&
+                payment.LastVerificationAttemptedAt <= retryCutoffUtc &&
+                dbContext.Orders.Any(order =>
+                    order.Id == payment.OrderId &&
+                    order.Status == OrderStatus.AwaitingPayment))
+            .OrderBy(payment => payment.LastVerificationAttemptedAt)
+            .ThenBy(payment => payment.Id)
+            .Select(payment => new PendingZarinPalPaymentData(
+                payment.Id,
+                payment.Authority!))
             .Take(take)
             .ToListAsync(cancellationToken);
     }
@@ -251,8 +287,10 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
             .Where(order =>
                 order.Id == orderId &&
                 order.CreatedAt <= cutoffUtc &&
+                !order.Payments.Any(payment => payment.CreatedAt > cutoffUtc) &&
                 (order.Status == OrderStatus.Pending ||
-                 order.Status == OrderStatus.AwaitingPayment))
+                 order.Status == OrderStatus.AwaitingPayment) &&
+                !order.Payments.Any(payment => payment.Status == PaymentStatus.RequiresManualReview))
             .Include(order => order.Payments)
             .Include(order => order.Groups)
             .ThenInclude(group => group.Items)

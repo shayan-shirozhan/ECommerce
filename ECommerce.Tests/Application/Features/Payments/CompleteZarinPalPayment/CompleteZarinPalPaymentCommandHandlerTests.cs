@@ -2,6 +2,7 @@ using ECommerce.Application;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Payments.CompleteZarinPalPayment;
+using ECommerce.Application.Options;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure;
@@ -79,6 +80,62 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
     }
 
     [Test]
+    public async Task Handle_should_not_let_nok_callback_override_an_in_flight_verification()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(
+            authority,
+            lastVerificationAttemptedAt: DateTime.UtcNow.AddSeconds(-30));
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayVerificationResult(true, false, 123456789));
+        using var provider = CreateProvider(gateway);
+
+        var response = await SendAsync(provider, seeded.PaymentId, authority, "NOK");
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(response.WasAlreadyProcessed, Is.True);
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_not_let_a_late_nok_callback_settle_a_payment_after_an_indeterminate_verify()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(
+            authority,
+            lastVerificationAttemptedAt: DateTime.UtcNow.AddMinutes(-4));
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayVerificationResult(false, false, null, "-51", "Payment not completed."));
+        using var provider = CreateProvider(gateway);
+
+        var response = await SendAsync(provider, seeded.PaymentId, authority, "NOK");
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(response.WasAlreadyProcessed, Is.True);
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task Handle_should_mark_ok_callback_failed_when_provider_verification_fails()
     {
         var authority = $"A{Guid.NewGuid():N}";
@@ -119,8 +176,7 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
                 IsIndeterminate: true));
         using var provider = CreateProvider(gateway);
 
-        Assert.ThrowsAsync<PaymentGatewayException>(
-            async () => await SendAsync(provider, seeded.PaymentId, authority, "OK"));
+        var response = await SendAsync(provider, seeded.PaymentId, authority, "OK");
 
         await using var verificationContext = CreateDbContext();
         var persistedOrder = await verificationContext.Orders
@@ -129,16 +185,77 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
 
         Assert.Multiple(() =>
         {
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(response.IsSuccessful, Is.False);
             Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
             Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
             Assert.That(persistedOrder.Payments.Single().RefId, Is.Null);
+            Assert.That(persistedOrder.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(persistedOrder.Payments.Single().FirstVerificationAttemptedAt, Is.Not.Null);
             Assert.That(persistedOrder.Payments.Single().LastVerificationAttemptedAt, Is.Not.Null);
             Assert.That(gateway.CallCount, Is.EqualTo(1));
         });
     }
 
     [Test]
-    public async Task Handle_should_not_repeat_verification_while_previous_attempt_is_within_retry_delay()
+    public async Task Handle_should_move_payment_to_manual_review_after_maximum_indeterminate_attempts()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(authority, priorVerificationAttempts: 4);
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayVerificationResult(false, false, null, "-50", "Amount mismatch", IsIndeterminate: true));
+        using var provider = CreateProvider(gateway);
+
+        var response = await SendAsync(provider, seeded.PaymentId, authority, "OK");
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+        var payment = order.Payments.Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(payment.Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(payment.VerificationAttemptCount, Is.EqualTo(5));
+            Assert.That(payment.LastVerificationErrorCode, Is.EqualTo("-50"));
+            Assert.That(payment.ManualReviewRequiredAt, Is.Not.Null);
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_move_old_verification_to_manual_review_without_another_provider_call()
+    {
+        var authority = $"A{Guid.NewGuid():N}";
+        var seeded = await SeedZarinPalPaymentAsync(
+            authority,
+            DateTime.UtcNow.AddMinutes(-21));
+        var gateway = new FixedZarinPalGateway(
+            new PaymentGatewayVerificationResult(true, false, 555123));
+        using var provider = CreateProvider(gateway);
+
+        var response = await SendAsync(provider, seeded.PaymentId, authority, "OK");
+
+        await using var context = CreateDbContext();
+        var order = await context.Orders
+            .Include(entity => entity.Payments)
+            .SingleAsync(entity => entity.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(order.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_return_pending_for_duplicate_callback_without_repeating_verification_during_retry_delay()
     {
         var authority = $"A{Guid.NewGuid():N}";
         var seeded = await SeedZarinPalPaymentAsync(
@@ -148,8 +265,7 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
             new PaymentGatewayVerificationResult(true, false, 555123));
         using var provider = CreateProvider(gateway);
 
-        Assert.ThrowsAsync<BusinessRuleException>(
-            async () => await SendAsync(provider, seeded.PaymentId, authority, "OK"));
+        var response = await SendAsync(provider, seeded.PaymentId, authority, "OK");
 
         await using var verificationContext = CreateDbContext();
         var persistedOrder = await verificationContext.Orders
@@ -158,8 +274,11 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
 
         Assert.Multiple(() =>
         {
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(response.WasAlreadyProcessed, Is.True);
             Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
             Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(persistedOrder.Payments.Single().VerificationAttemptCount, Is.EqualTo(1));
             Assert.That(gateway.CallCount, Is.Zero);
         });
     }
@@ -258,7 +377,8 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
 
     private async Task<SeededPayment> SeedZarinPalPaymentAsync(
         string authority,
-        DateTime? lastVerificationAttemptedAt = null)
+        DateTime? lastVerificationAttemptedAt = null,
+        int priorVerificationAttempts = 0)
     {
         var userId = Guid.NewGuid();
         var sellerId = Guid.NewGuid();
@@ -266,6 +386,11 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         var order = CreateOrderWithItem(userId, sellerId);
         var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
         payment.SetAuthority(authority);
+        for (var attempt = priorVerificationAttempts; attempt > 0; attempt--)
+        {
+            payment.MarkVerificationAttempted(DateTime.UtcNow.AddMinutes(-attempt * 3));
+        }
+
         if (lastVerificationAttemptedAt.HasValue)
             payment.MarkVerificationAttempted(lastVerificationAttemptedAt.Value);
 
@@ -289,6 +414,8 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
         configuration["Jwt:Audience"] = "ECommerce.Tests";
         configuration["Jwt:ExpirationMinutes"] = "60";
         configuration["Jwt:SecretKey"] = new string('t', 32);
+        configuration["OrderExpiration:MaxVerificationAttempts"] = "5";
+        configuration["OrderExpiration:MaxVerificationAgeMinutes"] = "20";
 
         var services = new ServiceCollection();
         services.AddLogging();
@@ -297,6 +424,9 @@ public sealed class CompleteZarinPalPaymentCommandHandlerTests : PostgresTestBas
 
         if (gateway is not null)
             services.AddScoped<IPaymentGateway>(_ => gateway);
+
+        services.Configure<OrderExpirationOptions>(
+            configuration.GetSection(OrderExpirationOptions.SectionName));
 
         return services.BuildServiceProvider();
     }

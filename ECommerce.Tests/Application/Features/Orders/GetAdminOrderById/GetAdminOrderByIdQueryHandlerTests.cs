@@ -103,6 +103,63 @@ public sealed class GetAdminOrderByIdQueryHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Handle_should_expose_manual_review_state_and_verification_metadata_to_admin()
+    {
+        var buyerId = Guid.NewGuid();
+        var sellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+        var order = Order.Create(
+            buyerId,
+            "Test Buyer",
+            "09120000000",
+            "Tehran",
+            "Tehran",
+            "1234567890",
+            "Test Street");
+        order.AddItem(
+            sellerId,
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "Review Product",
+            "Default",
+            "Test Seller",
+            100m,
+            1,
+            0m);
+
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.SetAuthority($"A{Guid.NewGuid():N}");
+        payment.MarkVerificationAttempted(DateTime.UtcNow.AddMinutes(-5));
+        payment.RecordVerificationOutcome("INVALID_RESPONSE");
+        payment.MarkRequiresManualReview();
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(
+                CreateUser(buyerId, $"buyer-{suffix}", $"buyer-{suffix}@example.test", "Test", "Buyer"),
+                CreateUser(sellerId, $"seller-{suffix}", $"seller-{suffix}@example.test", "Test", "Seller"));
+            context.Orders.Add(order);
+            await context.SaveChangesAsync();
+        }
+
+        using var provider = CreateProvider();
+        var response = await SendAsync(provider, new GetAdminOrderByIdQuery(order.Id));
+        var paymentResponse = response.Payments.Single();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(paymentResponse.Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+            Assert.That(paymentResponse.VerificationAttemptCount, Is.EqualTo(1));
+            Assert.That(paymentResponse.FirstVerificationAttemptedAt, Is.Not.Null);
+            Assert.That(paymentResponse.LastVerificationAttemptedAt, Is.Not.Null);
+            Assert.That(paymentResponse.LastVerificationErrorCode, Is.EqualTo("INVALID_RESPONSE"));
+            Assert.That(paymentResponse.ManualReviewRequiredAt, Is.Not.Null);
+        });
+    }
+
+    [Test]
     public void Handle_should_throw_not_found_for_unknown_order()
     {
         using var provider = CreateProvider();

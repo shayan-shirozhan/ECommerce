@@ -38,7 +38,8 @@ public sealed class GetAdminOrdersQueryHandler(IOrderRepository orderRepository)
                 order.CreatedAt,
                 order.TotalAmount,
                 order.OrderGroupCount,
-                order.ItemCount))
+                order.ItemCount,
+                order.HasPaymentRequiringManualReview))
             .ToList();
 
         return new GetAdminOrdersResponse(

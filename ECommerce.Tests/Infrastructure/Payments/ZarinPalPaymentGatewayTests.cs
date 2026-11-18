@@ -150,12 +150,14 @@ public sealed class ZarinPalPaymentGatewayTests
         });
     }
 
-    [Test]
-    public async Task VerifyPaymentAsync_should_treat_unknown_provider_codes_as_indeterminate()
+    [TestCase(-50)]
+    [TestCase(-54)]
+    [TestCase(-9)]
+    public async Task VerifyPaymentAsync_should_treat_every_code_except_minus_51_as_indeterminate(int providerCode)
     {
         var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = JsonContent("{\"data\":{\"code\":-54},\"errors\":[]}")
+            Content = JsonContent($"{{\"data\":{{\"code\":{providerCode}}},\"errors\":[]}}")
         });
         var gateway = CreateGateway(handler);
 
@@ -165,7 +167,43 @@ public sealed class ZarinPalPaymentGatewayTests
         {
             Assert.That(result.IsSuccessful, Is.False);
             Assert.That(result.IsIndeterminate, Is.True);
-            Assert.That(result.ErrorCode, Is.EqualTo("-54"));
+            Assert.That(result.ErrorCode, Is.EqualTo(providerCode.ToString()));
+        });
+    }
+
+    [Test]
+    public async Task VerifyPaymentAsync_should_keep_malformed_provider_response_indeterminate()
+    {
+        var handler = new RecordingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = JsonContent("not-json")
+        });
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.VerifyPaymentAsync(1000m, "A-authority");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.True);
+            Assert.That(result.ErrorCode, Is.EqualTo("INVALID_RESPONSE"));
+        });
+    }
+
+    [Test]
+    public async Task VerifyPaymentAsync_should_keep_transport_failure_indeterminate()
+    {
+        var handler = new RecordingHttpMessageHandler(_ =>
+            throw new HttpRequestException("Simulated provider connection failure."));
+        var gateway = CreateGateway(handler);
+
+        var result = await gateway.VerifyPaymentAsync(1000m, "A-authority");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.IsSuccessful, Is.False);
+            Assert.That(result.IsIndeterminate, Is.True);
+            Assert.That(result.ErrorCode, Is.EqualTo("TRANSPORT_ERROR"));
         });
     }
 

@@ -133,63 +133,121 @@ internal sealed class ZarinPalPaymentGateway(
             authority = authority.Trim()
         };
 
-        using var response = await SendAsync(
-            "pg/v4/payment/verify.json",
-            payload,
-            cancellationToken);
-
-        if (IsTransientHttpStatusCode(response.StatusCode))
+        HttpResponseMessage response;
+        try
+        {
+            response = await SendAsync(
+                "pg/v4/payment/verify.json",
+                payload,
+                cancellationToken);
+        }
+        catch (PaymentGatewayException exception)
         {
             logger.LogWarning(
-                "ZarinPal verification returned a transient HTTP status {StatusCode}; payment outcome remains unknown.",
-                (int)response.StatusCode);
+                exception,
+                "ZarinPal verification could not be completed because the provider request failed; payment outcome remains unknown.");
+
+            return CreateIndeterminateVerificationResult(
+                "TRANSPORT_ERROR",
+                "The payment provider could not be reached.");
+        }
+
+        using (response)
+        {
+            if (IsTransientHttpStatusCode(response.StatusCode))
+            {
+                logger.LogWarning(
+                    "ZarinPal verification returned a transient HTTP status {StatusCode}; payment outcome remains unknown.",
+                    (int)response.StatusCode);
+
+                return CreateIndeterminateVerificationResult(
+                    ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
+                    "The payment provider is temporarily unavailable.");
+            }
+
+            string body;
+            try
+            {
+                body = await response.Content.ReadAsStringAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception) when (
+                exception is HttpRequestException or IOException or TaskCanceledException)
+            {
+                logger.LogWarning(
+                    exception,
+                    "ZarinPal verification response could not be fully read; payment outcome remains unknown.");
+
+                return CreateIndeterminateVerificationResult(
+                    "TRANSPORT_ERROR",
+                    "The payment provider response could not be read completely.");
+            }
+
+            GatewayEnvelope envelope;
+            try
+            {
+                envelope = ParseEnvelope(body);
+            }
+            catch (PaymentGatewayException exception)
+            {
+                logger.LogWarning(
+                    exception,
+                    "ZarinPal verification returned an unreadable response; payment outcome remains unknown.");
+
+                return CreateIndeterminateVerificationResult(
+                    "INVALID_RESPONSE",
+                    "The payment provider returned an unreadable verification response.");
+            }
+
+            var isSuccessful = response.IsSuccessStatusCode &&
+                               envelope.DataCode is 100 or 101 &&
+                               envelope.RefId is > 0;
+            var providerCode = envelope.ErrorCode ??
+                               envelope.DataCode?.ToString(CultureInfo.InvariantCulture);
+            var isDefinitiveFailure = string.Equals(
+                providerCode,
+                "-51",
+                StringComparison.Ordinal);
+            var isIndeterminate = !isSuccessful && !isDefinitiveFailure;
+
+            if (isSuccessful)
+            {
+                logger.LogInformation(
+                    "ZarinPal payment verification succeeded. Provider code {ProviderCode}.",
+                    envelope.DataCode);
+            }
+            else
+            {
+                logger.LogWarning(
+                    "ZarinPal verification did not produce a definitive success result. HTTP {StatusCode}, provider code {ProviderCode}, indeterminate {IsIndeterminate}.",
+                    (int)response.StatusCode,
+                    providerCode,
+                    isIndeterminate);
+            }
 
             return new PaymentGatewayVerificationResult(
-                false,
-                false,
-                null,
-                ((int)response.StatusCode).ToString(CultureInfo.InvariantCulture),
-                "The payment provider is temporarily unavailable.",
-                IsIndeterminate: true);
-        }
-
-        var body = await response.Content.ReadAsStringAsync(cancellationToken);
-        var envelope = ParseEnvelope(body);
-
-        var isSuccessful = response.IsSuccessStatusCode &&
-                           envelope.DataCode is 100 or 101 &&
-                           envelope.RefId is > 0;
-        var providerCode = envelope.ErrorCode ??
-                           envelope.DataCode?.ToString(CultureInfo.InvariantCulture);
-        var isDefinitiveFailure = string.Equals(
-            providerCode,
-            "-51",
-            StringComparison.Ordinal);
-        var isIndeterminate = !isSuccessful && !isDefinitiveFailure;
-
-        if (isSuccessful)
-        {
-            logger.LogInformation(
-                "ZarinPal payment verification succeeded. Provider code {ProviderCode}.",
-                envelope.DataCode);
-        }
-        else
-        {
-            logger.LogWarning(
-                "ZarinPal verification did not produce a definitive success result. HTTP {StatusCode}, provider code {ProviderCode}, indeterminate {IsIndeterminate}.",
-                (int)response.StatusCode,
-                envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture),
+                isSuccessful,
+                envelope.DataCode == 101,
+                isSuccessful ? envelope.RefId : null,
+                providerCode,
+                envelope.ErrorMessage ?? envelope.DataMessage,
                 isIndeterminate);
         }
-
-        return new PaymentGatewayVerificationResult(
-            isSuccessful,
-            envelope.DataCode == 101,
-            isSuccessful ? envelope.RefId : null,
-            envelope.ErrorCode ?? envelope.DataCode?.ToString(CultureInfo.InvariantCulture),
-            envelope.ErrorMessage ?? envelope.DataMessage,
-            isIndeterminate);
     }
+
+    private static PaymentGatewayVerificationResult CreateIndeterminateVerificationResult(
+        string errorCode,
+        string errorMessage)
+        => new(
+            false,
+            false,
+            null,
+            errorCode,
+            errorMessage,
+            IsIndeterminate: true);
 
     private async Task<HttpResponseMessage> SendAsync(
         string relativePath,

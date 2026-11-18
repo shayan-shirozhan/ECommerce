@@ -389,10 +389,20 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");
 
+                    b.Property<DateTime?>("FirstVerificationAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("LastGatewayRequestStartedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("LastVerificationAttemptedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastVerificationErrorCode")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("ManualReviewRequiredAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("OrderId")
@@ -406,6 +416,11 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
 
                     b.Property<long?>("RefId")
                         .HasColumnType("bigint");
+
+                    b.Property<int>("VerificationAttemptCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
 
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
@@ -443,7 +458,7 @@ namespace ECommerce.Infrastructure.Persistence.Migrations
                     b.HasIndex(new[] { "OrderId" }, "IX_Payments_OrderId_Active")
                         .IsUnique()
                         .HasDatabaseName("IX_Payments_OrderId_Active")
-                        .HasFilter("\"Status\" IN (1, 2)");
+                        .HasFilter("\"Status\" IN (1, 2, 6)");
 
                     b.ToTable("Payments");
                 });

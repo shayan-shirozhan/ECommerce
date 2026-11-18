@@ -58,4 +58,9 @@ public sealed record AdminOrderPaymentResponse(
     long? RefId,
     DateTime CreatedAt,
     DateTime? PaidAt,
-    DateTime? FailedAt);
+    DateTime? FailedAt,
+    int VerificationAttemptCount,
+    DateTime? FirstVerificationAttemptedAt,
+    DateTime? LastVerificationAttemptedAt,
+    string? LastVerificationErrorCode,
+    DateTime? ManualReviewRequiredAt);

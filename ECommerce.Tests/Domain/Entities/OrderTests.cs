@@ -53,6 +53,63 @@ public sealed class OrderTests
 
 
     [Test]
+    public void InitiatePayment_should_reject_new_payment_when_previous_payment_requires_manual_review()
+    {
+        var order = CreateOrderWithItem();
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.SetAuthority("A-authority");
+        payment.MarkVerificationAttempted(DateTime.UtcNow);
+        payment.MarkRequiresManualReview();
+
+        var exception = Assert.Throws<DomainException>(
+            () => order.InitiatePayment(PaymentMethod.ZarinPal));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception, Is.Not.Null);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(order.Payments, Has.Count.EqualTo(1));
+            Assert.That(payment.Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+        });
+    }
+
+    [Test]
+    public void Cancel_should_reject_order_when_payment_requires_manual_review()
+    {
+        var order = CreateOrderWithItem();
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.SetAuthority("A-authority");
+        payment.MarkVerificationAttempted(DateTime.UtcNow);
+        payment.MarkRequiresManualReview();
+
+        var exception = Assert.Throws<DomainException>(() => order.Cancel());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception, Is.Not.Null);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(payment.Status, Is.EqualTo(PaymentStatus.RequiresManualReview));
+        });
+    }
+
+    [Test]
+    public void Cancel_should_reject_order_with_pending_zarinpal_payment()
+    {
+        var order = CreateOrderWithItem();
+        var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.SetAuthority("A-authority");
+
+        var exception = Assert.Throws<DomainException>(() => order.Cancel());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception, Is.Not.Null);
+            Assert.That(order.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(payment.Status, Is.EqualTo(PaymentStatus.Pending));
+        });
+    }
+
+    [Test]
     public void InitiatePayment_should_allow_retry_after_previous_payment_failed()
     {
         var order = CreateOrderWithItem();

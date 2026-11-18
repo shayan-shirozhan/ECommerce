@@ -189,6 +189,17 @@ public class Order : AuditableEntity
         if (Status != OrderStatus.Pending && Status != OrderStatus.AwaitingPayment)
             throw new DomainException("Order cannot be cancelled in its current state.");
 
+        if (_payments.Any(payment => payment.Status == PaymentStatus.RequiresManualReview))
+            throw new DomainException(
+                "Order cannot be cancelled while a payment requires manual review.");
+
+        if (_payments.Any(payment =>
+                payment.PaymentMethod == PaymentMethod.ZarinPal &&
+                payment.Status == PaymentStatus.Pending))
+        {
+            throw new DomainException(
+                "A pending ZarinPal payment must be definitively rejected or safely cancelled before the order can be cancelled.");
+        }
 
         if (_groups.Any(group => group.Status != OrderGroupStatus.Pending))
             throw new DomainException("Order cannot be cancelled because one or more groups cannot be cancelled.");
@@ -217,6 +228,10 @@ public class Order : AuditableEntity
 
         if (_payments.Any(payment => payment.Status == PaymentStatus.Successful))
             throw new DomainException("This order has already been paid.");
+
+        if (_payments.Any(payment => payment.Status == PaymentStatus.RequiresManualReview))
+            throw new DomainException(
+                "A new payment cannot be initiated while a previous payment requires manual review.");
 
         var payment = Payment.Create(Id, TotalAmount, paymentMethod);
 
