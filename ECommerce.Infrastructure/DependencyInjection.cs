@@ -1,6 +1,10 @@
+using Microsoft.AspNetCore.DataProtection;
 using System.Text;
+using ECommerce.Application.Abstractions.Email;
 using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Abstractions.Payments;
+using ECommerce.Application.Options;
+using ECommerce.Infrastructure.Email;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Payments;
@@ -21,7 +25,8 @@ public static class DependencyInjection
     public static void AddInfrastructure(
         this IServiceCollection services,
         IConfiguration configuration,
-        bool enableMockPaymentGateway = false)
+        bool enableMockPaymentGateway = false,
+        bool enableDevelopmentEmailSender = false)
     {
         var connectionString = configuration.GetConnectionString("ECommerceDb") ??
                                throw new InvalidOperationException("ECommerceDb is not configured");
@@ -41,7 +46,39 @@ public static class DependencyInjection
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddRoles<IdentityRole<Guid>>()
-            .AddEntityFrameworkStores<ECommerceDbContext>();
+            .AddEntityFrameworkStores<ECommerceDbContext>()
+            .AddDefaultTokenProviders();
+
+        services.AddDataProtection();
+
+        var passwordResetTokenLifespanMinutes = configuration.GetValue(
+            $"{PasswordResetEmailOptions.SectionName}:{nameof(PasswordResetEmailOptions.TokenLifespanMinutes)}",
+            30);
+        if (passwordResetTokenLifespanMinutes is < 5 or > 120)
+            throw new InvalidOperationException("PasswordResetEmail:TokenLifespanMinutes must be between 5 and 120.");
+
+        services.Configure<DataProtectionTokenProviderOptions>(options =>
+            options.TokenLifespan = TimeSpan.FromMinutes(passwordResetTokenLifespanMinutes));
+
+        var passwordResetEmailOptions = services.AddOptions<PasswordResetEmailOptions>()
+            .Bind(configuration.GetSection(PasswordResetEmailOptions.SectionName));
+
+        if (enableDevelopmentEmailSender)
+        {
+            passwordResetEmailOptions
+                .Validate(options => Uri.TryCreate(options.FrontendUrl, UriKind.Absolute, out var uri) &&
+                                     (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) &&
+                                     string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment),
+                    "PasswordResetEmail:FrontendUrl must be an absolute HTTP or HTTPS URL without a query or fragment.")
+                .ValidateOnStart();
+
+            services.AddScoped<IEmailSender, DevelopmentEmailSender>();
+        }
+        else
+        {
+            // Production must register a real provider explicitly; never log reset links outside Development.
+            services.AddScoped<IEmailSender, DisabledEmailSender>();
+        }
 
         var jwtSection = configuration.GetSection(JwtOptions.SectionName);
 

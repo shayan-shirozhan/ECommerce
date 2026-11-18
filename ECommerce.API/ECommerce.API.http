@@ -132,6 +132,26 @@ Authorization: Bearer {{CustomerToken}}
 
 # -------------------------------------------------------------------
 
+### Request password reset (Development logs the link)
+POST {{ECommerce_API_HostAddress}}/api/auth/forgot-password
+Content-Type: application/json
+Origin: {{ECommerce_API_HostAddress}}
+
+{
+  "email": "customer@test.com"
+}
+
+### Reset password (use the token from the Development log)
+POST {{ECommerce_API_HostAddress}}/api/auth/reset-password
+Content-Type: application/json
+Origin: {{ECommerce_API_HostAddress}}
+
+{
+  "email": "customer@test.com",
+  "token": "PASTE_URL_DECODED_TOKEN_HERE",
+  "newPassword": "NewPassword123!"
+}
+
 ### Login - Seller
 
 POST {{ECommerce_API_HostAddress}}/api/auth/login

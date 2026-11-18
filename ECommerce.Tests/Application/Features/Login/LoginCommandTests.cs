@@ -189,6 +189,18 @@ public sealed class LoginCommandTests
             string newPassword,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Password changes are not used by login tests.");
+
+        public Task<string?> GeneratePasswordResetTokenAsync(
+            string email,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Password reset is not used by login tests.");
+
+        public Task<Guid> ResetPasswordAsync(
+            string email,
+            string token,
+            string newPassword,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Password reset is not used by login tests.");
     }
 
 

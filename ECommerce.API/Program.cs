@@ -35,7 +35,8 @@ builder.Services.AddOpenApi();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
     builder.Configuration,
-    enableMockPaymentGateway: builder.Environment.IsDevelopment());
+    enableMockPaymentGateway: builder.Environment.IsDevelopment(),
+    enableDevelopmentEmailSender: builder.Environment.IsDevelopment());
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();
 
 var allowedOrigins = builder.Configuration
