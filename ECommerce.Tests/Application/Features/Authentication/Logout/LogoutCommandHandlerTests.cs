@@ -33,5 +33,8 @@ public sealed class LogoutCommandHandlerTests
             RevokedToken = refreshToken;
             return Task.CompletedTask;
         }
+
+        public Task RevokeAllForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 }

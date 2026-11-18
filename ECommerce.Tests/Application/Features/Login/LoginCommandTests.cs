@@ -182,6 +182,13 @@ public sealed class LoginCommandTests
             Guid userId,
             CancellationToken cancellationToken = default)
             => Task.CompletedTask;
+
+        public Task ChangePasswordAsync(
+            Guid userId,
+            string currentPassword,
+            string newPassword,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Password changes are not used by login tests.");
     }
 
 
@@ -211,6 +218,11 @@ public sealed class LoginCommandTests
             string refreshToken,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Token revocation is not used by login tests.");
+
+        public Task RevokeAllForUserAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Session revocation is not used by login tests.");
     }
 
     private sealed class FakeAccessTokenService : IAccessTokenService

@@ -64,6 +64,7 @@ Browser clients should send requests from an allowed frontend origin. Non-browse
 | POST | `/api/auth/login` | Authenticate, return an access token, and set the refresh cookie |
 | GET | `/api/users/me` | Return the authenticated user's profile |
 | PUT | `/api/users/me` | Update the authenticated user's first and last name |
+| PUT | `/api/users/me/password` | Change the authenticated user's password and revoke all refresh-token sessions |
 | POST | `/api/auth/refresh` | Rotate the refresh cookie and return a new access token |
 | POST | `/api/auth/logout` | Revoke the current refresh token and clear the cookie |
 
@@ -80,6 +81,8 @@ All authentication endpoints use the existing `auth` rate-limit policy.
 7. For replay detection, capture a refresh cookie value before rotation, rotate it once, then submit the old value again. The replay must fail and invalidate the replacement token from the same family.
 8. Call `GET /api/users/me` with the access token and verify that the response contains the current user's id, email, first name, last name, and seller status.
 9. Call `PUT /api/users/me` with new `firstName` and `lastName` values, then call GET again and verify the names were updated. The email and seller status are not editable through this endpoint; email changes require a separate verification flow.
+10. Call `PUT /api/users/me/password` with the current password and a new password that satisfies the configured Identity password policy. The request returns `204 No Content`; an incorrect current password or a new password that fails the Identity policy returns `400 Bad Request`.
+11. After a successful password change, all active refresh-token sessions for that user are revoked in the same database transaction. Other devices must authenticate again. Existing access JWTs remain valid until their configured expiration because access-token revocation is not currently implemented.
 
 ## Database migration
 

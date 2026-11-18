@@ -63,6 +63,9 @@ public sealed class RefreshTokenCommandHandlerTests
 
         public Task RevokeAsync(string refreshToken, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
+
+        public Task RevokeAllForUserAsync(Guid userId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
     }
 
     private sealed class FakeAccessTokenService : IAccessTokenService

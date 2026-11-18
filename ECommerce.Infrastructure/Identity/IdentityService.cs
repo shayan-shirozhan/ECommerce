@@ -1,5 +1,7 @@
 using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Exceptions;
+using FluentValidation;
+using FluentValidation.Results;
 using Microsoft.AspNetCore.Identity;
 
 namespace ECommerce.Infrastructure.Identity;
@@ -103,5 +105,28 @@ internal sealed class IdentityService(UserManager<ApplicationUser> userManager) 
             var errors = string.Join("; ", result.Errors.Select(error => error.Description));
             throw new InvalidOperationException($"Failed to remove user '{userId}': {errors}");
         }
+    }
+
+    public async Task ChangePasswordAsync(
+        Guid userId,
+        string currentPassword,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+            throw new NotFoundException($"User with id '{userId}' was not found.");
+
+        var result = await userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+        if (result.Succeeded)
+            return;
+
+        var failures = result.Errors.Select(error => new ValidationFailure(
+            error.Code == "PasswordMismatch" ? nameof(currentPassword) : nameof(newPassword),
+            error.Description));
+
+        throw new ValidationException(failures);
     }
 }

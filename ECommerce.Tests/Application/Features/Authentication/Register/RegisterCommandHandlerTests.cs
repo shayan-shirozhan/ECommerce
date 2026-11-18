@@ -122,6 +122,13 @@ public sealed class RegisterCommandHandlerTests
                 ? Task.CompletedTask
                 : Task.FromException(DeleteException);
         }
+
+        public Task ChangePasswordAsync(
+            Guid userId,
+            string currentPassword,
+            string newPassword,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Password changes are not used by registration tests.");
     }
 
     private sealed class FakeUserRoleService : IUserRoleService
