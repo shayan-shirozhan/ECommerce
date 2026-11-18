@@ -7,6 +7,81 @@ namespace ECommerce.Infrastructure.Persistence.Repositories;
 
 internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepository
 {
+    public async Task<IReadOnlyList<AdminOrderListItemData>> GetAdminPageAsync(
+        int page,
+        int pageSize,
+        OrderStatus? status = null,
+        DateTime? createdFromUtc = null,
+        DateTime? createdToUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var offset = checked((int)(((long)page - 1L) * pageSize));
+        var orders = ApplyAdminFilters(status, createdFromUtc, createdToUtc);
+
+        return await (
+            from order in orders
+            join customer in dbContext.Users.AsNoTracking()
+                on order.UserId equals customer.Id
+            orderby order.CreatedAt descending, order.Id descending
+            select new AdminOrderListItemData(
+                order.Id,
+                order.UserId,
+                customer.Email,
+                customer.FirstName,
+                customer.LastName,
+                order.Status,
+                order.CreatedAt,
+                order.TotalAmount,
+                order.Groups.Count(),
+                order.Groups.SelectMany(orderGroup => orderGroup.Items).Count()))
+            .Skip(offset)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken);
+    }
+
+    public Task<int> CountAdminAsync(
+        OrderStatus? status = null,
+        DateTime? createdFromUtc = null,
+        DateTime? createdToUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        return ApplyAdminFilters(status, createdFromUtc, createdToUtc)
+            .CountAsync(cancellationToken);
+    }
+
+    public Task<Order?> GetByIdForAdminAsync(
+        Guid orderId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .AsNoTracking()
+            .AsSplitQuery()
+            .Where(order => order.Id == orderId)
+            .Include(order => order.Groups)
+            .ThenInclude(group => group.Items)
+            .Include(order => order.Payments)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private IQueryable<Order> ApplyAdminFilters(
+        OrderStatus? status,
+        DateTime? createdFromUtc,
+        DateTime? createdToUtc)
+    {
+        var query = dbContext.Orders.AsNoTracking();
+
+        if (status.HasValue)
+            query = query.Where(order => order.Status == status.Value);
+
+        if (createdFromUtc.HasValue)
+            query = query.Where(order => order.CreatedAt >= createdFromUtc.Value);
+
+        if (createdToUtc.HasValue)
+            query = query.Where(order => order.CreatedAt <= createdToUtc.Value);
+
+        return query;
+    }
+
     public async Task AddAsync(Order order, CancellationToken cancellationToken = default)
     {
         await dbContext.Orders.AddAsync(order, cancellationToken);

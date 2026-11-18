@@ -82,6 +82,10 @@ The Development seeder creates the following sample accounts:
 
 These credentials are for local development only. They are seeded only in Development and must never be used in a deployed environment.
 
+## Admin order management
+
+Administrators can inspect all orders through `GET /api/admin/orders` with pagination, order-status filtering, and inclusive UTC creation-time bounds. `GET /api/admin/orders/{orderId}` returns customer and shipping information, every seller group and item, tracking data, and payment-attempt summaries. Both endpoints require the `Admin` role and are read-only. See [Admin order management](docs/admin-order-management.md) for the query contract and examples.
+
 ## Build and tests
 
 ```bash
