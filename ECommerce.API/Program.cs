@@ -262,3 +262,6 @@ if (app.Environment.IsDevelopment())
 }
 
 app.Run();
+
+// Expose the top-level entry point to WebApplicationFactory-based integration tests.
+public partial class Program { }
