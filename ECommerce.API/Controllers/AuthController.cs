@@ -1,7 +1,9 @@
 using ECommerce.API.Contracts.Authentication;
 using ECommerce.Application.Exceptions;
+using ECommerce.Application.Features.Authentication.ForgotPassword;
 using ECommerce.Application.Features.Authentication.Login;
 using ECommerce.Application.Features.Authentication.Logout;
+using ECommerce.Application.Features.Authentication.ResetPassword;
 using ECommerce.Application.Features.Authentication.Refresh;
 using ECommerce.Application.Features.Authentication.Register;
 using MediatR;
@@ -70,6 +72,31 @@ public class AuthController(ISender sender, IWebHostEnvironment environment) : C
         }
 
         DeleteRefreshTokenCookie();
+        return NoContent();
+    }
+
+    [HttpPost("forgot-password")]
+    [ProducesResponseType(typeof(ForgotPasswordResponse), StatusCodes.Status202Accepted)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ForgotPassword(
+        [FromBody] ForgotPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var response = await sender.Send(new ForgotPasswordCommand(request.Email), cancellationToken);
+        return Accepted(response);
+    }
+
+    [HttpPost("reset-password")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> ResetPassword(
+        [FromBody] ResetPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        await sender.Send(
+            new ResetPasswordCommand(request.Email, request.Token, request.NewPassword),
+            cancellationToken);
+
         return NoContent();
     }
 

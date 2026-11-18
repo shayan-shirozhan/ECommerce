@@ -129,6 +129,18 @@ public sealed class RegisterCommandHandlerTests
             string newPassword,
             CancellationToken cancellationToken = default)
             => throw new NotSupportedException("Password changes are not used by registration tests.");
+
+        public Task<string?> GeneratePasswordResetTokenAsync(
+            string email,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Password reset is not used by registration tests.");
+
+        public Task<Guid> ResetPasswordAsync(
+            string email,
+            string token,
+            string newPassword,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException("Password reset is not used by registration tests.");
     }
 
     private sealed class FakeUserRoleService : IUserRoleService

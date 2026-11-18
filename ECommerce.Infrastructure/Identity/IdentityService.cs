@@ -129,4 +129,45 @@ internal sealed class IdentityService(UserManager<ApplicationUser> userManager) 
 
         throw new ValidationException(failures);
     }
+
+    public async Task<string?> GeneratePasswordResetTokenAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var user = await userManager.FindByEmailAsync(email.Trim());
+        if (user is null)
+            return null;
+
+        return await userManager.GeneratePasswordResetTokenAsync(user);
+    }
+
+    public async Task<Guid> ResetPasswordAsync(
+        string email,
+        string token,
+        string newPassword,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var user = await userManager.FindByEmailAsync(email.Trim());
+        if (user is null)
+            throw new ValidationException(new[]
+            {
+                new ValidationFailure(nameof(token), "The password reset token is invalid or expired.")
+            });
+
+        var result = await userManager.ResetPasswordAsync(user, token, newPassword);
+        if (!result.Succeeded)
+        {
+            var failures = result.Errors.Select(error => error.Code == "InvalidToken"
+                ? new ValidationFailure(nameof(token), "The password reset token is invalid or expired.")
+                : new ValidationFailure(nameof(newPassword), error.Description));
+
+            throw new ValidationException(failures);
+        }
+
+        return user.Id;
+    }
 }
