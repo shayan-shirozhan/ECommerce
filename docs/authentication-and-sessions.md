@@ -62,6 +62,8 @@ Browser clients should send requests from an allowed frontend origin. Non-browse
 |---|---|---|
 | POST | `/api/auth/register` | Create a customer account |
 | POST | `/api/auth/login` | Authenticate, return an access token, and set the refresh cookie |
+| GET | `/api/users/me` | Return the authenticated user's profile |
+| PUT | `/api/users/me` | Update the authenticated user's first and last name |
 | POST | `/api/auth/refresh` | Rotate the refresh cookie and return a new access token |
 | POST | `/api/auth/logout` | Revoke the current refresh token and clear the cookie |
 
@@ -76,6 +78,8 @@ All authentication endpoints use the existing `auth` rate-limit policy.
 5. Verify the response contains a new access token and that the refresh cookie has been replaced.
 6. Call `POST /api/auth/logout` and then try refreshing again; the refresh attempt must return `401 Unauthorized`.
 7. For replay detection, capture a refresh cookie value before rotation, rotate it once, then submit the old value again. The replay must fail and invalidate the replacement token from the same family.
+8. Call `GET /api/users/me` with the access token and verify that the response contains the current user's id, email, first name, last name, and seller status.
+9. Call `PUT /api/users/me` with new `firstName` and `lastName` values, then call GET again and verify the names were updated. The email and seller status are not editable through this endpoint; email changes require a separate verification flow.
 
 ## Database migration
 

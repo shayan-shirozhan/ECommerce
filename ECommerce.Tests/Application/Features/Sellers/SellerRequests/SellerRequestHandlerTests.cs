@@ -143,6 +143,22 @@ public sealed class SellerRequestHandlerTests
 
         public SellerStatus SellerStatus { get; set; } = SellerStatus.None;
 
+        public Task<UserProfileData?> GetProfileAsync(
+            Guid userId,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<UserProfileData?>(null);
+        }
+
+        public Task UpdateProfileAsync(
+            Guid userId,
+            string firstName,
+            string lastName,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task<bool> ExistsAsync(
             Guid userId,
             CancellationToken cancellationToken = default)

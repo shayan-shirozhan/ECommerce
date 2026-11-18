@@ -8,6 +8,38 @@ namespace ECommerce.Infrastructure.Persistence.Repositories;
 
 internal sealed class UserRepository(ECommerceDbContext dbContext) : IUserRepository
 {
+    public async Task<UserProfileData?> GetProfileAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        return await dbContext.Users
+            .AsNoTracking()
+            .Where(user => user.Id == userId)
+            .Select(user => new UserProfileData(
+                user.Id,
+                user.Email!,
+                user.FirstName,
+                user.LastName,
+                user.SellerStatus))
+            .SingleOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task UpdateProfileAsync(
+        Guid userId,
+        string firstName,
+        string lastName,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await dbContext.Users
+            .SingleOrDefaultAsync(user => user.Id == userId, cancellationToken);
+
+        if (user is null)
+            throw new NotFoundException($"User with id '{userId}' was not found.");
+
+        user.FirstName = firstName;
+        user.LastName = lastName;
+    }
+
     public async Task<bool> ExistsAsync(Guid userId, CancellationToken cancellationToken = default)
     {
         return await dbContext.Users.AnyAsync(x => x.Id == userId, cancellationToken);
