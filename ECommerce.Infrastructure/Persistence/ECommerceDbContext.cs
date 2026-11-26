@@ -29,6 +29,7 @@ public class ECommerceDbContext(DbContextOptions<ECommerceDbContext> options)
     public DbSet<OrderGroup> OrderGroups => Set<OrderGroup>();
     public DbSet<OrderItem> OrderItems => Set<OrderItem>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<PaymentResolutionAudit> PaymentResolutionAudits => Set<PaymentResolutionAudit>();
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
 

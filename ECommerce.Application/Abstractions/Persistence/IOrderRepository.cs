@@ -11,15 +11,18 @@ public interface IOrderRepository
         OrderStatus? status = null,
         DateTime? createdFromUtc = null,
         DateTime? createdToUtc = null,
+        bool? hasManualReview = null,
         CancellationToken cancellationToken = default);
 
     Task<int> CountAdminAsync(
         OrderStatus? status = null,
         DateTime? createdFromUtc = null,
         DateTime? createdToUtc = null,
+        bool? hasManualReview = null,
         CancellationToken cancellationToken = default);
 
     Task<Order?> GetByIdForAdminAsync(Guid orderId, CancellationToken cancellationToken = default);
+    Task<Order?> GetByPaymentIdForAdminForUpdateAsync(Guid paymentId, CancellationToken cancellationToken = default);
 
     Task AddAsync(Order order, CancellationToken cancellationToken = default);
     Task<string?> GetSellerDisplayNameAsync(Guid sellerId, CancellationToken cancellationToken = default);

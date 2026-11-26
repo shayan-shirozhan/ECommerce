@@ -136,6 +136,7 @@ public static class DependencyInjection
         services.AddScoped<ICartRepository, CartRepository>();
         services.AddScoped<IWishlistRepository, WishlistRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
+        services.AddScoped<IPaymentResolutionAuditRepository, PaymentResolutionAuditRepository>();
         if (enableMockPaymentGateway)
             services.AddScoped<IMockPaymentGateway, MockPaymentGateway>();
 

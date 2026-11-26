@@ -7,6 +7,7 @@ using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Features.Orders.CreateOrderFromCart;
 using ECommerce.Application.Features.Orders.GetMyOrderById;
 using ECommerce.Application.Features.Payments.InitiatePayment;
+using ECommerce.Application.Features.Payments.ResolveAdminPayment;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure.Persistence;
@@ -190,6 +191,131 @@ public sealed class ApiEndToEndTests : PostgresTestBase
             Environment.SetEnvironmentVariable(name, value);
 
         _originalBootstrapEnvironment.Clear();
+    }
+
+
+    [Test]
+    public async Task AdminPaymentResolution_RequiresAdminRoleAndRejectsWithInventoryRestoration()
+    {
+        Guid paymentId;
+        Guid orderId;
+        int stockBeforeReservation;
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+            var admin = await dbContext.Users.SingleAsync(user => user.Email == AdminEmail);
+            var seller = await dbContext.Users.SingleAsync(user => user.Email == SeededSellerEmail);
+            var offer = await dbContext.SellerOffers
+                .Include(entity => entity.ProductVariant)
+                .ThenInclude(variant => variant.Product)
+                .SingleAsync(entity => entity.Id == _seededSellerOfferId);
+
+            stockBeforeReservation = offer.Stock;
+            offer.UpdateStock(stockBeforeReservation - 2);
+
+            var order = Order.Create(
+                admin.Id,
+                "Admin Resolution Test",
+                "09120000000",
+                "Tehran",
+                "Tehran",
+                "1234567890",
+                "Admin resolution test address");
+            order.AddItem(
+                seller.Id,
+                offer.ProductVariant.ProductId,
+                offer.ProductVariantId,
+                offer.Id,
+                offer.ProductVariant.Product.Name,
+                offer.ProductVariant.Name ?? "Default",
+                "Seeded Seller",
+                offer.Price,
+                quantity: 2,
+                discountAmount: 0m);
+
+            var payment = order.InitiatePayment(PaymentMethod.ZarinPal);
+            payment.SetAuthority($"A{Guid.NewGuid():N}");
+            for (var attempt = 5; attempt >= 1; attempt--)
+                payment.MarkVerificationAttempted(DateTime.UtcNow.AddMinutes(-attempt * 3));
+            payment.MarkRequiresManualReview();
+
+            dbContext.Orders.Add(order);
+            await dbContext.SaveChangesAsync();
+
+            paymentId = payment.Id;
+            orderId = order.Id;
+        }
+
+        // Seller credentials must not be accepted by the admin-only endpoint.
+        using (var sellerRequest = CreateRequest(
+                   HttpMethod.Post,
+                   $"/api/admin/payments/{paymentId:D}/resolve",
+                   _seededSellerAccessToken))
+        {
+            sellerRequest.Content = JsonContent.Create(new
+            {
+                action = (int)PaymentResolutionAction.RejectAndCancel,
+                reason = "This request must be blocked for seller accounts."
+            });
+
+            using var sellerResponse = await _client.SendAsync(sellerRequest);
+            Assert.That(sellerResponse.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
+        }
+
+        using (var listRequest = CreateRequest(
+                   HttpMethod.Get,
+                   "/api/admin/orders?hasManualReview=true",
+                   _adminAccessToken))
+        using (var listResponse = await _client.SendAsync(listRequest))
+        {
+            Assert.That(listResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            var orders = await listResponse.Content.ReadFromJsonAsync<
+                ECommerce.Application.Features.Orders.GetAdminOrders.GetAdminOrdersResponse>();
+            Assert.That(orders!.Items.Any(item => item.OrderId == orderId), Is.True);
+        }
+
+        using (var adminRequest = CreateRequest(
+                   HttpMethod.Post,
+                   $"/api/admin/payments/{paymentId:D}/resolve",
+                   _adminAccessToken))
+        {
+            adminRequest.Content = JsonContent.Create(new
+            {
+                action = (int)PaymentResolutionAction.RejectAndCancel,
+                reason = "Provider settlement evidence confirms that no payment was collected."
+            });
+
+            using var adminResponse = await _client.SendAsync(adminRequest);
+            Assert.That(
+                adminResponse.StatusCode,
+                Is.EqualTo(HttpStatusCode.OK),
+                await adminResponse.Content.ReadAsStringAsync());
+
+            var result = await adminResponse.Content.ReadFromJsonAsync<ResolveAdminPaymentResponse>();
+            Assert.That(result, Is.Not.Null);
+            Assert.That(result!.PaymentStatus, Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(result.OrderStatus, Is.EqualTo(OrderStatus.Cancelled));
+            Assert.That(result.RestoredQuantity, Is.EqualTo(2));
+        }
+
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+            var offer = await dbContext.SellerOffers.SingleAsync(entity => entity.Id == _seededSellerOfferId);
+            var order = await dbContext.Orders.Include(entity => entity.Payments)
+                .SingleAsync(entity => entity.Id == orderId);
+            var audit = await dbContext.PaymentResolutionAudits.SingleAsync(entity => entity.PaymentId == paymentId);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(offer.Stock, Is.EqualTo(stockBeforeReservation));
+                Assert.That(order.Status, Is.EqualTo(OrderStatus.Cancelled));
+                Assert.That(order.Payments.Single().Status, Is.EqualTo(PaymentStatus.Failed));
+                Assert.That(audit.AdminUserId, Is.Not.EqualTo(Guid.Empty));
+                Assert.That(audit.Outcome, Is.EqualTo("RejectedAndCancelled"));
+            });
+        }
     }
 
     [Test]

@@ -1,4 +1,4 @@
-﻿using ECommerce.Application.Abstractions.Payments;
+using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Abstractions.Persistence;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Options;
@@ -20,7 +20,8 @@ public sealed class ZarinPalPaymentVerifier(
     public async Task<ZarinPalVerificationOutcome> VerifyAsync(
         Order order,
         Payment payment,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool allowAdminVerificationRetry = false)
     {
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(payment);
@@ -43,7 +44,8 @@ public sealed class ZarinPalPaymentVerifier(
         var limits = expirationOptions.Value;
         var maximumAge = TimeSpan.FromMinutes(limits.MaxVerificationAgeMinutes);
 
-        if (payment.HasReachedVerificationLimit(
+        if (!allowAdminVerificationRetry &&
+            payment.HasReachedVerificationLimit(
                 nowUtc,
                 limits.MaxVerificationAttempts,
                 maximumAge))
