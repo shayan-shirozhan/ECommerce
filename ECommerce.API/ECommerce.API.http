@@ -19,6 +19,7 @@
 @ProductImageId = YOUR_PRODUCT_IMAGE_ID
 
 @SellerOfferId = YOUR_SELLER_OFFER_ID
+@SecondSellerOfferId = YOUR_SECOND_SELLER_OFFER_ID
 @SellerRequestId = YOUR_SELLER_REQUEST_ID
 @OrderId = YOUR_ORDER_ID
 @PaymentId = YOUR_PAYMENT_ID
@@ -152,7 +153,7 @@ Origin: {{ECommerce_API_HostAddress}}
   "newPassword": "NewPassword123!"
 }
 
-### Login - Seller
+### Login - Seller 1 (use before Get My Seller Offers)
 
 POST {{ECommerce_API_HostAddress}}/api/auth/login
 Content-Type: application/json
@@ -160,6 +161,28 @@ Origin: {{ECommerce_API_HostAddress}}
 
 {
   "email": "seller@test.com",
+  "password": "Password123!"
+}
+
+### Login - Seller 2 (run separately, then repeat Get My Seller Offers)
+
+POST {{ECommerce_API_HostAddress}}/api/auth/login
+Content-Type: application/json
+Origin: {{ECommerce_API_HostAddress}}
+
+{
+  "email": "seller2@test.com",
+  "password": "Password123!"
+}
+
+### Login - Customer (Development demo account)
+
+POST {{ECommerce_API_HostAddress}}/api/auth/login
+Content-Type: application/json
+Origin: {{ECommerce_API_HostAddress}}
+
+{
+  "email": "customer@test.com",
   "password": "Password123!"
 }
 
@@ -807,9 +830,66 @@ Authorization: Bearer {{SellerToken}}
 
 # -------------------------------------------------------------------
 
+# Customer Cart
+
+# -------------------------------------------------------------------
+
+### Add First Seller Offer to Cart
+POST {{ECommerce_API_HostAddress}}/api/cart/items
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "sellerOfferId": "{{SellerOfferId}}",
+  "quantity": 1
+}
+
+### Add Second Seller Offer to Cart
+POST {{ECommerce_API_HostAddress}}/api/cart/items
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "sellerOfferId": "{{SecondSellerOfferId}}",
+  "quantity": 1
+}
+
+### Get My Cart
+GET {{ECommerce_API_HostAddress}}/api/cart
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
+# -------------------------------------------------------------------
+
 # Customer Orders
 
 # -------------------------------------------------------------------
+
+### Create Order from Cart (reserves stock)
+POST {{ECommerce_API_HostAddress}}/api/orders/from-cart
+Content-Type: application/json
+Authorization: Bearer {{CustomerToken}}
+
+{
+  "shippingRecipientName": "Demo Customer",
+  "shippingPhoneNumber": "09120000000",
+  "shippingProvince": "Tehran",
+  "shippingCity": "Tehran",
+  "shippingPostalCode": "1234567890",
+  "shippingAddressLine": "Demo Street 1"
+}
+
+### Get My Orders
+GET {{ECommerce_API_HostAddress}}/api/orders/my
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+### Get My Order Details
+GET {{ECommerce_API_HostAddress}}/api/orders/my/{{OrderId}}
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
 
 ### Cancel My Order
 
