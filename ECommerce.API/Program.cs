@@ -4,6 +4,7 @@ using ECommerce.API.BackgroundServices;
 using ECommerce.API.HealthChecks;
 using ECommerce.API.Middleware;
 using ECommerce.API.Options;
+using ECommerce.API.Payments;
 using ECommerce.Application;
 using ECommerce.Application.Features.Payments.CompleteMockPayment;
 using ECommerce.Application.Options;
@@ -24,6 +25,10 @@ var builderArgs = args
     .Where(argument => !string.Equals(argument, "--bootstrap-admin", StringComparison.OrdinalIgnoreCase))
     .ToArray();
 var builder = WebApplication.CreateBuilder(builderArgs);
+var isDevelopment = builder.Environment.IsDevelopment();
+var isDemo = DemoPaymentEnvironment.ValidateAndIsEnabled(
+    builder.Environment.EnvironmentName,
+    builder.Configuration);
 var zarinPalEnabled = builder.Configuration.GetValue<bool>("ZarinPal:Enabled");
 
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
@@ -37,8 +42,10 @@ builder.Services.AddOpenApi();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(
     builder.Configuration,
-    enableMockPaymentGateway: builder.Environment.IsDevelopment(),
-    enableDevelopmentEmailSender: builder.Environment.IsDevelopment());
+    enableMockPaymentGateway: isDevelopment,
+    enableDevelopmentEmailSender: isDevelopment,
+    enableDemoPaymentGateway: isDemo,
+    connectionStringName: isDemo ? "DemoECommerceDb" : "ECommerceDb");
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();
 if (zarinPalEnabled)
     builder.Services.AddHostedService<ZarinPalPaymentReconciliationBackgroundService>();
@@ -154,12 +161,12 @@ if (runInitialAdminBootstrap)
     return;
 }
 
-// Production migrations are deployed separately. Development remains self-contained.
+// Production migrations are deployed separately. Development and the isolated Demo database are self-contained.
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
 
-    if (app.Environment.IsDevelopment())
+    if (app.Environment.IsDevelopment() || isDemo)
         await dbContext.Database.MigrateAsync();
 
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
@@ -221,7 +228,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.MapControllers();
 
-// The mock payment completion endpoint and gateway do not exist outside Development.
+// These existing Development mock endpoints remain unavailable in Demo and Production.
 if (app.Environment.IsDevelopment())
 {
     app.MapPost("/api/payments/orders/{orderId:guid}/initiate-mock",

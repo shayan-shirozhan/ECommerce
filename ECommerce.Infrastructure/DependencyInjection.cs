@@ -26,10 +26,41 @@ public static class DependencyInjection
         this IServiceCollection services,
         IConfiguration configuration,
         bool enableMockPaymentGateway = false,
-        bool enableDevelopmentEmailSender = false)
+        bool enableDevelopmentEmailSender = false,
+        bool enableDemoPaymentGateway = false,
+        string connectionStringName = "ECommerceDb")
     {
-        var connectionString = configuration.GetConnectionString("ECommerceDb") ??
-                               throw new InvalidOperationException("ECommerceDb is not configured");
+        var demoPaymentsEnabled = configuration.GetValue<bool>("DemoPayments:Enabled");
+        if (demoPaymentsEnabled != enableDemoPaymentGateway)
+        {
+            throw new InvalidOperationException(
+                "DemoPayments:Enabled and enableDemoPaymentGateway must be configured together.");
+        }
+
+        if (enableDemoPaymentGateway)
+        {
+            if (enableMockPaymentGateway || enableDevelopmentEmailSender)
+            {
+                throw new InvalidOperationException(
+                    "The Demo payment gateway cannot be combined with Development-only services.");
+            }
+
+            if (!string.Equals(connectionStringName, "DemoECommerceDb", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    "The Demo payment gateway requires the dedicated DemoECommerceDb connection string.");
+            }
+
+            if (configuration.GetValue<bool>("ZarinPal:Enabled"))
+            {
+                throw new InvalidOperationException(
+                    "ZarinPal cannot be enabled together with the Demo payment gateway.");
+            }
+        }
+
+        var connectionString = configuration.GetConnectionString(connectionStringName);
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException($"{connectionStringName} is not configured");
         services.AddDbContext<ECommerceDbContext>(options => options.UseNpgsql(connectionString));
 
         services.AddIdentityCore<ApplicationUser>(options =>
@@ -137,7 +168,9 @@ public static class DependencyInjection
         services.AddScoped<IWishlistRepository, WishlistRepository>();
         services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<IPaymentResolutionAuditRepository, PaymentResolutionAuditRepository>();
-        if (enableMockPaymentGateway)
+        if (enableDemoPaymentGateway)
+            services.AddScoped<IMockPaymentGateway, DemoPaymentGateway>();
+        else if (enableMockPaymentGateway)
             services.AddScoped<IMockPaymentGateway, MockPaymentGateway>();
 
         var zarinPalSection = configuration.GetSection(ZarinPalOptions.SectionName);
