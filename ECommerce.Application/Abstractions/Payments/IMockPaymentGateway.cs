@@ -1,7 +1,8 @@
 namespace ECommerce.Application.Abstractions.Payments;
 
 /// <summary>
-/// Development-only payment processing used by the mock completion endpoint.
+/// Non-production payment processing used by mock completion endpoints.
+/// Implementations are registered only in Development or the isolated Demo environment.
 /// </summary>
 public interface IMockPaymentGateway
 {

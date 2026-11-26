@@ -43,6 +43,87 @@ public sealed class PaymentGatewayRegistrationTests
     }
 
     [Test]
+    public void AddInfrastructure_should_register_deterministic_demo_gateway_only_when_explicitly_enabled()
+    {
+        var services = new ServiceCollection();
+        var configuration = CreateConfiguration(demoPaymentsEnabled: true);
+
+        services.AddInfrastructure(
+            configuration,
+            enableDemoPaymentGateway: true,
+            connectionStringName: "DemoECommerceDb");
+
+        var descriptor = services.SingleOrDefault(
+            item => item.ServiceType == typeof(IMockPaymentGateway));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(descriptor, Is.Not.Null);
+            Assert.That(descriptor!.ImplementationType, Is.EqualTo(typeof(DemoPaymentGateway)));
+            Assert.That(
+                services.Any(item => item.ServiceType == typeof(IPaymentGateway)),
+                Is.False);
+        });
+    }
+
+    [Test]
+    public void AddInfrastructure_should_reject_demo_gateway_without_explicit_flag()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            services.AddInfrastructure(
+                CreateConfiguration(),
+                enableDemoPaymentGateway: true,
+                connectionStringName: "DemoECommerceDb"));
+    }
+
+    [Test]
+    public void AddInfrastructure_should_reject_demo_flag_when_demo_gateway_registration_is_disabled()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            services.AddInfrastructure(CreateConfiguration(demoPaymentsEnabled: true)));
+    }
+
+    [Test]
+    public void AddInfrastructure_should_reject_demo_gateway_when_using_normal_database_connection_name()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            services.AddInfrastructure(
+                CreateConfiguration(demoPaymentsEnabled: true),
+                enableDemoPaymentGateway: true));
+    }
+
+    [Test]
+    public void AddInfrastructure_should_reject_demo_gateway_when_zarinpal_is_enabled()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            services.AddInfrastructure(
+                CreateConfiguration(zarinPalEnabled: true, demoPaymentsEnabled: true),
+                enableDemoPaymentGateway: true,
+                connectionStringName: "DemoECommerceDb"));
+    }
+
+    [Test]
+    public void AddInfrastructure_should_not_combine_demo_gateway_with_development_services()
+    {
+        var services = new ServiceCollection();
+
+        Assert.Throws<InvalidOperationException>(() =>
+            services.AddInfrastructure(
+                CreateConfiguration(demoPaymentsEnabled: true),
+                enableMockPaymentGateway: true,
+                enableDemoPaymentGateway: true,
+                connectionStringName: "DemoECommerceDb"));
+    }
+
+    [Test]
     public void AddInfrastructure_should_register_zarinpal_gateway_only_when_enabled_and_configured()
     {
         var services = new ServiceCollection();
@@ -74,11 +155,14 @@ public sealed class PaymentGatewayRegistrationTests
 
     private static IConfiguration CreateConfiguration(
         bool zarinPalEnabled = false,
-        int timeoutSeconds = 15)
+        int timeoutSeconds = 15,
+        bool demoPaymentsEnabled = false)
         => new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:ECommerceDb"] = "Host=localhost;Database=ecommerce;Username=postgres;Password=postgres",
+                ["ConnectionStrings:DemoECommerceDb"] = "Host=localhost;Database=ecommerce_demo;Username=postgres;Password=postgres",
+                ["DemoPayments:Enabled"] = demoPaymentsEnabled.ToString(),
                 ["Jwt:Issuer"] = "ECommerce.Tests",
                 ["Jwt:Audience"] = "ECommerce.Tests",
                 ["Jwt:SecretKey"] = new string('S', 64),
