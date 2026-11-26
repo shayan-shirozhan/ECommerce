@@ -13,10 +13,11 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
         OrderStatus? status = null,
         DateTime? createdFromUtc = null,
         DateTime? createdToUtc = null,
+        bool? hasManualReview = null,
         CancellationToken cancellationToken = default)
     {
         var offset = checked((int)(((long)page - 1L) * pageSize));
-        var orders = ApplyAdminFilters(status, createdFromUtc, createdToUtc);
+        var orders = ApplyAdminFilters(status, createdFromUtc, createdToUtc, hasManualReview);
 
         return await (
             from order in orders
@@ -44,9 +45,10 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
         OrderStatus? status = null,
         DateTime? createdFromUtc = null,
         DateTime? createdToUtc = null,
+        bool? hasManualReview = null,
         CancellationToken cancellationToken = default)
     {
-        return ApplyAdminFilters(status, createdFromUtc, createdToUtc)
+        return ApplyAdminFilters(status, createdFromUtc, createdToUtc, hasManualReview)
             .CountAsync(cancellationToken);
     }
 
@@ -64,10 +66,24 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
             .FirstOrDefaultAsync(cancellationToken);
     }
 
+    public Task<Order?> GetByPaymentIdForAdminForUpdateAsync(
+        Guid paymentId,
+        CancellationToken cancellationToken = default)
+    {
+        return dbContext.Orders
+            .AsSplitQuery()
+            .Where(order => order.Payments.Any(payment => payment.Id == paymentId))
+            .Include(order => order.Payments)
+            .Include(order => order.Groups)
+            .ThenInclude(group => group.Items)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
     private IQueryable<Order> ApplyAdminFilters(
         OrderStatus? status,
         DateTime? createdFromUtc,
-        DateTime? createdToUtc)
+        DateTime? createdToUtc,
+        bool? hasManualReview)
     {
         var query = dbContext.Orders.AsNoTracking();
 
@@ -79,6 +95,15 @@ internal sealed class OrderRepository(ECommerceDbContext dbContext) : IOrderRepo
 
         if (createdToUtc.HasValue)
             query = query.Where(order => order.CreatedAt <= createdToUtc.Value);
+
+        if (hasManualReview.HasValue)
+        {
+            query = hasManualReview.Value
+                ? query.Where(order => order.Payments.Any(payment =>
+                    payment.Status == PaymentStatus.RequiresManualReview))
+                : query.Where(order => !order.Payments.Any(payment =>
+                    payment.Status == PaymentStatus.RequiresManualReview));
+        }
 
         return query;
     }

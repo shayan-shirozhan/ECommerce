@@ -1,4 +1,4 @@
-﻿using ECommerce.Domain.Common;
+using ECommerce.Domain.Common;
 using ECommerce.Domain.Enums;
 using ECommerce.Domain.Exceptions;
 
@@ -165,10 +165,49 @@ public class Payment : AuditableEntity
             throw new DomainException("Payment reference ID must be greater than zero.");
 
         Status = PaymentStatus.Successful;
+        LastVerificationErrorCode = null;
         TransactionId = string.IsNullOrWhiteSpace(transactionId) ? null : transactionId.Trim();
         GatewayReference = string.IsNullOrWhiteSpace(gatewayReference) ? null : gatewayReference.Trim();
         RefId = refId;
         PaidAt = DateTime.UtcNow;
+    }
+
+    public void ResumeManualReviewForVerification()
+    {
+        if (Status != PaymentStatus.RequiresManualReview)
+            throw new DomainException("Only payments requiring manual review can be reopened for verification.");
+
+        if (PaymentMethod != ECommerce.Domain.Enums.PaymentMethod.ZarinPal ||
+            string.IsNullOrWhiteSpace(Authority))
+        {
+            throw new DomainException("Only ZarinPal payments with an authority can be verified again.");
+        }
+
+        Status = PaymentStatus.Pending;
+        ManualReviewRequiredAt = null;
+    }
+
+    public void ApproveManualReview(long refId)
+    {
+        if (Status != PaymentStatus.RequiresManualReview)
+            throw new DomainException("Only payments requiring manual review can be approved.");
+
+        if (refId <= 0)
+            throw new DomainException("Payment reference ID must be greater than zero.");
+
+        Status = PaymentStatus.Successful;
+        LastVerificationErrorCode = null;
+        RefId = refId;
+        PaidAt = DateTime.UtcNow;
+    }
+
+    public void RejectManualReview()
+    {
+        if (Status != PaymentStatus.RequiresManualReview)
+            throw new DomainException("Only payments requiring manual review can be rejected.");
+
+        Status = PaymentStatus.Failed;
+        FailedAt = DateTime.UtcNow;
     }
 
     public void MarkFailed()

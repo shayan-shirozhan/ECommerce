@@ -182,6 +182,62 @@ public sealed class GetAdminOrdersQueryHandlerTests : PostgresTestBase
         });
     }
 
+
+    [Test]
+    public async Task Handle_should_filter_orders_by_manual_review_flag_in_both_directions()
+    {
+        var suffix = Guid.NewGuid().ToString("N");
+        var reviewedBuyerId = Guid.NewGuid();
+        var reviewedSellerId = Guid.NewGuid();
+        var reviewedOrder = CreateOrder(reviewedBuyerId, reviewedSellerId);
+        var payment = reviewedOrder.InitiatePayment(PaymentMethod.ZarinPal);
+        payment.SetAuthority($"A{Guid.NewGuid():N}");
+        payment.MarkVerificationAttempted(DateTime.UtcNow.AddMinutes(-3));
+        payment.MarkRequiresManualReview();
+
+        var reviewedBuyer = CreateUser(
+            reviewedBuyerId, $"reviewed-buyer-{suffix}", $"reviewed-{suffix}@example.test", "Reviewed", "Buyer");
+        var reviewedSeller = CreateUser(
+            reviewedSellerId, $"reviewed-seller-{suffix}", $"reviewed-seller-{suffix}@example.test", "Reviewed", "Seller");
+
+        await using (var context = CreateDbContext())
+        {
+            context.Users.AddRange(reviewedBuyer, reviewedSeller);
+            context.Orders.Add(reviewedOrder);
+            await context.SaveChangesAsync();
+        }
+
+        var normalBuyerId = Guid.NewGuid();
+        var normalSellerId = Guid.NewGuid();
+        await SeedOrderAsync(
+            normalBuyerId,
+            $"normal-{suffix}@example.test",
+            "Normal",
+            "Buyer",
+            normalSellerId,
+            OrderStatus.Pending,
+            DateTime.UtcNow);
+
+        using var provider = CreateProvider();
+        var manualReviewOrders = await SendAsync(
+            provider,
+            new GetAdminOrdersQuery(HasManualReview: true));
+        var otherOrders = await SendAsync(
+            provider,
+            new GetAdminOrdersQuery(HasManualReview: false));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(manualReviewOrders.TotalCount, Is.EqualTo(1));
+            Assert.That(manualReviewOrders.Items.Select(item => item.OrderId),
+                Is.EquivalentTo(new[] { reviewedOrder.Id }));
+            Assert.That(manualReviewOrders.Items.All(item => item.HasPaymentRequiringManualReview), Is.True);
+            Assert.That(otherOrders.TotalCount, Is.EqualTo(1));
+            Assert.That(otherOrders.Items.Single().OrderId, Is.Not.EqualTo(reviewedOrder.Id));
+            Assert.That(otherOrders.Items.All(item => !item.HasPaymentRequiringManualReview), Is.True);
+        });
+    }
+
     private async Task<Order> SeedOrderAsync(
         Guid buyerId,
         string email,

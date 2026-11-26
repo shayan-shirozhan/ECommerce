@@ -24,6 +24,7 @@ public sealed class AdminOrdersController(ISender sender) : ControllerBase
         [FromQuery] OrderStatus? status = null,
         [FromQuery] DateTimeOffset? createdFromUtc = null,
         [FromQuery] DateTimeOffset? createdToUtc = null,
+        [FromQuery] bool? hasManualReview = null,
         CancellationToken cancellationToken = default)
     {
         var response = await sender.Send(
@@ -32,7 +33,8 @@ public sealed class AdminOrdersController(ISender sender) : ControllerBase
                 pageSize,
                 status,
                 createdFromUtc,
-                createdToUtc),
+                createdToUtc,
+                hasManualReview),
             cancellationToken);
 
         return Ok(response);

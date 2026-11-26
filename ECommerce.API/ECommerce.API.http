@@ -878,3 +878,44 @@ Authorization: Bearer {{CustomerToken}}
 ### Remove product from wishlist
 DELETE {{ECommerce_API_HostAddress}}/api/wishlist/items/{{ProductId}}
 Authorization: Bearer {{CustomerToken}}
+
+
+# -------------------------------------------------------------------
+# Admin payment resolution
+# -------------------------------------------------------------------
+
+### List orders with payments requiring manual review
+GET {{ECommerce_API_HostAddress}}/api/admin/orders?page=1&pageSize=20&hasManualReview=true
+Accept: application/json
+Authorization: Bearer {{AdminToken}}
+
+### Retry ZarinPal verification after reviewing provider status (action 1)
+POST {{ECommerce_API_HostAddress}}/api/admin/payments/{{PaymentId}}/resolve
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "action": 1,
+  "reason": "Reviewed provider dashboard; retrying server-side verification."
+}
+
+### Manually approve after independent provider confirmation (action 2)
+POST {{ECommerce_API_HostAddress}}/api/admin/payments/{{PaymentId}}/resolve
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "action": 2,
+  "reason": "Matched the successful transaction in the provider dashboard.",
+  "refId": 987654321
+}
+
+### Reject payment and cancel order with stock restoration (action 3)
+POST {{ECommerce_API_HostAddress}}/api/admin/payments/{{PaymentId}}/resolve
+Content-Type: application/json
+Authorization: Bearer {{AdminToken}}
+
+{
+  "action": 3,
+  "reason": "Provider settlement evidence confirms that no payment was collected."
+}

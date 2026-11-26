@@ -8,7 +8,8 @@ public sealed record GetAdminOrdersQuery(
     int PageSize = 10,
     OrderStatus? Status = null,
     DateTimeOffset? CreatedFromUtc = null,
-    DateTimeOffset? CreatedToUtc = null)
+    DateTimeOffset? CreatedToUtc = null,
+    bool? HasManualReview = null)
     : IRequest<GetAdminOrdersResponse>
 {
     public const int MaxPageSize = 100;

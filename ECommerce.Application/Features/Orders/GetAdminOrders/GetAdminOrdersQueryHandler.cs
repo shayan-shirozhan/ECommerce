@@ -17,6 +17,7 @@ public sealed class GetAdminOrdersQueryHandler(IOrderRepository orderRepository)
             query.Status,
             createdFromUtc,
             createdToUtc,
+            query.HasManualReview,
             cancellationToken);
 
         var orders = await orderRepository.GetAdminPageAsync(
@@ -25,6 +26,7 @@ public sealed class GetAdminOrdersQueryHandler(IOrderRepository orderRepository)
             query.Status,
             createdFromUtc,
             createdToUtc,
+            query.HasManualReview,
             cancellationToken);
 
         var items = orders
