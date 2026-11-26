@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - master
+      - "feature/**"
       - "fix/**"
 
   pull_request:
@@ -19,21 +20,69 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: "10.0.x"
 
-      - name: Restore
-        run: dotnet restore ECommerce.slnx
+      - name: Restore and audit NuGet dependencies
+        run: |
+          dotnet restore ECommerce.slnx \
+            -p:NuGetAuditMode=all \
+            -p:NuGetAuditLevel=moderate \
+            '-p:WarningsAsErrors=NU1900%3BNU1902%3BNU1903%3BNU1904%3BNU1905'
+
+      - name: Verify formatting of changed C# files
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mapfile -t changed_cs_files < <(
+            git diff --name-only --diff-filter=ACMRT "${BASE_SHA}...HEAD" -- '*.cs'
+          )
+
+          if (( ${#changed_cs_files[@]} == 0 )); then
+            echo "No changed C# files; formatting verification is not applicable."
+            exit 0
+          fi
+
+          printf 'Verifying formatting for changed C# files:\n'
+          printf ' - %s\n' "${changed_cs_files[@]}"
+
+          dotnet format ECommerce.slnx \
+            --verify-no-changes \
+            --no-restore \
+            --include "${changed_cs_files[@]}"
 
       - name: Build
         run: dotnet build ECommerce.slnx --configuration Release --no-restore
 
-      - name: Test
-        run: dotnet test ECommerce.slnx --configuration Release --no-build
+      - name: Test and collect code coverage
+        run: >-
+          dotnet test ECommerce.slnx
+          --configuration Release
+          --no-build
+          --no-restore
+          --collect:"XPlat Code Coverage"
+          --results-directory ./TestResults/ci
+          --logger "trx;LogFileName=ecommerce-tests.trx"
+
+      - name: Upload test and coverage results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-and-coverage-results
+          path: TestResults/ci/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Build Docker image
+        run: docker build --pull --tag ecommerce-api:ci --file Dockerfile .
