@@ -931,6 +931,22 @@ Authorization: Bearer {{CustomerToken}}
 
 ###
 
+### Initiate Demo Payment (Demo environment only)
+# Use only against the isolated Demo deployment. The endpoint creates a pending mock payment.
+POST {{ECommerce_API_HostAddress}}/api/demo/payments/orders/{{OrderId}}/initiate
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
+### Complete Demo Payment (Demo environment only)
+# Replace PaymentId with the id returned by Initiate Demo Payment.
+POST {{ECommerce_API_HostAddress}}/api/demo/payments/{{PaymentId}}/complete
+Accept: application/json
+Authorization: Bearer {{CustomerToken}}
+
+###
+
 ### ZarinPal callback (provider/browser return; normally called by redirect)
 GET {{ECommerce_API_HostAddress}}/api/payments/zarinpal/callback?paymentId={{PaymentId}}&Authority={{ZarinPalAuthority}}&Status=OK
 Accept: application/json

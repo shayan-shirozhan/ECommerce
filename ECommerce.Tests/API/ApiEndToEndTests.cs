@@ -132,6 +132,16 @@ public sealed class ApiEndToEndTests : PostgresTestBase
         _paymentGateway.Reset();
     }
 
+    [Test]
+    public async Task Demo_payment_endpoints_should_not_be_mapped_in_development()
+    {
+        using var response = await _client.PostAsync(
+            $"/api/demo/payments/orders/{Guid.NewGuid()}/initiate",
+            content: null);
+
+        Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+    }
+
     [OneTimeTearDown]
     public async Task StopApi()
     {

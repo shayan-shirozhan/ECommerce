@@ -308,6 +308,7 @@ The integration and end-to-end tests use Testcontainers and require Docker to be
 ## Documentation
 
 - [Development seed](docs/development-seed.md) — seeded accounts, demo catalog, and idempotency behavior.
+- [Public Demo environment](docs/public-demo.md) — Demo isolation boundary and the dedicated simulated payment endpoints.
 - [Payment state machine](docs/payment-state-machine.md) — payment verification, reconciliation, manual review, and resolution paths.
 - [Admin order management](docs/admin-order-management.md) — admin order listing, details, filters, and payment operations.
 - [API integration testing](docs/api-integration-testing.md) — `WebApplicationFactory`, Testcontainers, and end-to-end test setup.
