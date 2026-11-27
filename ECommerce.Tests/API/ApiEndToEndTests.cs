@@ -167,6 +167,7 @@ public sealed class ApiEndToEndTests : PostgresTestBase
         SetBootstrapEnvironmentVariable("Jwt__Audience", "ECommerce.API");
         SetBootstrapEnvironmentVariable("Jwt__ExpirationMinutes", "60");
         SetBootstrapEnvironmentVariable("RefreshTokens__ExpirationDays", "30");
+        SetBootstrapEnvironmentVariable("RefreshTokens__RotationGracePeriodSeconds", "1");
         SetBootstrapEnvironmentVariable("ZarinPal__Enabled", "true");
         SetBootstrapEnvironmentVariable("ZarinPal__MerchantId", "11111111-1111-1111-1111-111111111111");
         SetBootstrapEnvironmentVariable("ZarinPal__ApiBaseUrl", "https://sandbox.zarinpal.com");
@@ -555,6 +556,10 @@ public sealed class ApiEndToEndTests : PostgresTestBase
             using var rejectedRefresh = await _client.SendAsync(refreshWithoutOrigin);
             Assert.That(rejectedRefresh.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         }
+
+        // This assertion verifies confirmed replay, not a second tab racing the rotation.
+        // Wait beyond the test host's one-second grace window before reusing the old cookie.
+        await Task.Delay(TimeSpan.FromMilliseconds(1_500));
 
         using var replayResponse = await SendCookiePostAsync("/api/auth/refresh", initialSession.RefreshCookie);
         Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));

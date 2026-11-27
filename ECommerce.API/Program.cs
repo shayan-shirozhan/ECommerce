@@ -70,6 +70,7 @@ if (isDemo)
 }
 
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();
+builder.Services.AddHostedService<RefreshTokenCleanupBackgroundService>();
 if (zarinPalEnabled)
     builder.Services.AddHostedService<ZarinPalPaymentReconciliationBackgroundService>();
 

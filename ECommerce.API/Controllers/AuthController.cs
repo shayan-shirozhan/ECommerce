@@ -1,4 +1,4 @@
-using ECommerce.API.Contracts.Authentication;
+﻿using ECommerce.API.Contracts.Authentication;
 using ECommerce.API.RateLimiting;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Authentication.ForgotPassword;
@@ -37,6 +37,9 @@ public class AuthController(ISender sender, IWebHostEnvironment environment) : C
     }
 
     [HttpPost("refresh")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Refresh(CancellationToken cancellationToken)
     {
         if (!Request.Cookies.TryGetValue(RefreshTokenCookieName, out var refreshToken) ||
