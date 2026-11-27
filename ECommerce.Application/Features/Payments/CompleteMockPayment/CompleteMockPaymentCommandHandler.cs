@@ -44,6 +44,12 @@ public sealed class CompleteMockPaymentCommandHandler(
                 $"Payment with id '{command.PaymentId}' was not found.");
         }
 
+        if (payment.PaymentMethod != PaymentMethod.Mock)
+        {
+            throw new BusinessRuleException(
+                "Only mock payments can be completed through the mock payment flow.");
+        }
+
         if (payment.Status != PaymentStatus.Pending)
         {
             throw new BusinessRuleException(

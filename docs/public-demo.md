@@ -2,7 +2,7 @@
 
 ## Status
 
-The Demo environment boundary is introduced in phase B5.1. The dedicated deterministic payment gateway is registered, but public Demo payment endpoints and demo catalog/user seeding are intentionally delivered in phase B5.2.
+The Demo environment boundary and its first payment slice are implemented. The isolated Demo environment exposes dedicated initiate/complete payment endpoints backed by the deterministic `DemoPaymentGateway`. Demo account/catalog seeding, API documentation exposure, deployment automation, and the remaining public-demo operational controls are still pending.
 
 ## Isolation rules
 
@@ -13,7 +13,7 @@ The Demo environment boundary is introduced in phase B5.1. The dedicated determi
 - Startup rejects a Demo connection string that resolves to the same PostgreSQL host, port, and database name as the normal application connection string, even when credentials differ. The deployment must also ensure that different hostnames or proxies do not point to the same underlying database resource; that physical infrastructure aliasing cannot be proven from a connection string alone.
 - ZarinPal must remain disabled in Demo. Demo registers only its deterministic mock gateway.
 - Development retains its existing randomized mock gateway and Development email sender.
-- Demo does not register Development-only services, expose Development OpenAPI/Scalar endpoints, or enable Development email logging.
+- Demo does not register Development-only services or enable Development email logging. OpenAPI/Scalar exposure is a separate pending decision; the current Demo configuration does not expose either endpoint.
 - Demo automatically applies EF Core migrations to its dedicated Demo database. Production migrations remain a separate deployment step.
 
 ## Required environment configuration
@@ -33,4 +33,15 @@ Do not reuse the Production database or Production credentials. Keep the Demo da
 
 `DemoPaymentGateway` always returns a successful simulated result with a stable transaction identifier derived from the local payment ID. It does not contact ZarinPal or transfer funds. The existing Development `MockPaymentGateway` remains randomized and is not used in Demo.
 
-The payment endpoints and seeded Demo accounts/catalog are not yet enabled by this first slice. They are added in phase B5.2 after the environment boundary is established.
+### Demo payment endpoints
+
+The authenticated customer payment flow uses these routes only when `ASPNETCORE_ENVIRONMENT=Demo` and `DemoPayments:Enabled=true`:
+
+- `POST /api/demo/payments/orders/{orderId}/initiate` creates a pending payment using `PaymentMethod.Mock`.
+- `POST /api/demo/payments/{paymentId}/complete` completes that pending payment through `DemoPaymentGateway`.
+
+Both commands retain the existing ownership, order-state, payment-window, and payment-state checks. The completion handler only finds a payment belonging to the authenticated customer. The endpoints are not mapped in Development, Production, or other environments. The Development-only `/api/payments/.../initiate-mock` and `/complete-mock` routes remain unchanged.
+
+The deterministic gateway always simulates success, returns a stable transaction identifier derived from the payment ID, and never contacts a provider or transfers real funds.
+
+Demo account/catalog seeding and the remaining operational controls are still pending.

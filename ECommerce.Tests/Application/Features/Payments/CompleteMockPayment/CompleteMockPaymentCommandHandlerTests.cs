@@ -158,6 +158,32 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Handle_should_reject_non_mock_payment_without_calling_gateway()
+    {
+        var userId = Guid.NewGuid();
+        var seeded = await SeedPaymentAsync(userId, paymentMethod: PaymentMethod.ZarinPal);
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayResult(true, "txn-unused", "gateway-ref-unused"));
+        using var provider = CreateProvider(userId, gateway);
+
+        Assert.ThrowsAsync<BusinessRuleException>(
+            async () => await SendAsync(provider, seeded.PaymentId));
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(order => order.Payments)
+            .SingleAsync(order => order.Id == seeded.OrderId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.AwaitingPayment));
+            Assert.That(persistedOrder.Payments.Single().PaymentMethod, Is.EqualTo(PaymentMethod.ZarinPal));
+            Assert.That(persistedOrder.Payments.Single().Status, Is.EqualTo(PaymentStatus.Pending));
+            Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
     public async Task Handle_should_reject_payment_that_has_already_been_processed()
     {
         // Arrange
@@ -338,7 +364,8 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     private async Task<SeededPayment> SeedPaymentAsync(
         Guid userId,
         bool markAsSuccessful = false,
-        bool cancelOrder = false)
+        bool cancelOrder = false,
+        PaymentMethod paymentMethod = PaymentMethod.Mock)
     {
         var sellerId = Guid.NewGuid();
         var suffix = Guid.NewGuid().ToString("N");
@@ -379,7 +406,7 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             1,
             0m);
 
-        var payment = order.InitiatePayment();
+        var payment = order.InitiatePayment(paymentMethod);
 
         if (markAsSuccessful)
         {

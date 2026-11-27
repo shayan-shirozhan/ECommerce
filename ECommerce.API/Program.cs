@@ -228,6 +228,11 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions
 
 app.MapControllers();
 
+// Public Demo has its own deterministic payment routes. These are never mapped in
+// Development, Production, or any other environment.
+if (isDemo)
+    app.MapDemoPaymentEndpoints();
+
 // These existing Development mock endpoints remain unavailable in Demo and Production.
 if (app.Environment.IsDevelopment())
 {
