@@ -26,9 +26,9 @@ A multi-vendor marketplace backend built with **.NET 10**, **ASP.NET Core**, and
 | Validation | FluentValidation |
 | Persistence | PostgreSQL, Entity Framework Core |
 | Identity and security | ASP.NET Core Identity, JWT, HttpOnly refresh-token cookie, token rotation and replay detection |
-| Payments | ZarinPal integration, payment verification and reconciliation, development-only mock endpoints |
+| Payments | ZarinPal integration, payment verification and reconciliation, Development-only mock endpoints, isolated authenticated Demo payment endpoints |
 | Logging and health | Serilog, `/health/live`, `/health/ready` |
-| API exploration | OpenAPI, Scalar (Development only) |
+| API exploration | OpenAPI, Scalar (Development; opt-in in the isolated Demo environment) |
 | Testing | NUnit, Testcontainers, `WebApplicationFactory` |
 | Local environment | Docker, Docker Compose |
 
@@ -104,7 +104,7 @@ The API waits for PostgreSQL to become healthy. In the `Development` environment
 - Liveness: <http://localhost:8080/health/live>
 - Readiness: <http://localhost:8080/health/ready>
 
-Scalar and the generated OpenAPI document are intentionally exposed only in Development. Do not deploy the application with `ASPNETCORE_ENVIRONMENT=Development`.
+Scalar and the generated OpenAPI document are exposed in Development. They can also be explicitly enabled in the isolated Demo environment with `DemoApiDocumentation__Enabled=true`; the setting is rejected in every other environment. Keep `ASPNETCORE_ENVIRONMENT=Demo` for a public demo rather than deploying Development.
 
 ### 4. Stop the application
 
@@ -283,7 +283,7 @@ The refresh cookie uses `SameSite=Strict`. A browser frontend should therefore b
 - Required configuration includes `ConnectionStrings:ECommerceDb` and JWT settings (`Jwt:SecretKey`, `Jwt:Issuer`, and `Jwt:Audience`). Environment variables can use double underscores, for example `Jwt__SecretKey`.
 - JWT signing secrets must be at least 32 bytes. Store real credentials in a secret manager or deployment environment, never in source control.
 - EF Core migrations are applied automatically only in Development. Apply migrations as an explicit deployment step in non-development environments before starting the API.
-- Scalar and generated OpenAPI are Development-only by default. Do not enable the Development environment on a public deployment.
+- Scalar and generated OpenAPI are enabled automatically only in Development. In the isolated Demo environment, they are opt-in through `DemoApiDocumentation__Enabled=true`; the setting is rejected outside Demo. Do not enable the Development environment on a public deployment.
 - ZarinPal is disabled by default; configure it explicitly before enabling real payment traffic. Keep merchant credentials and callback/frontend URLs outside source control.
 - Development seed accounts and catalog data are not production bootstrap data. Production admin creation uses the explicit `--bootstrap-admin` workflow with `BootstrapAdmin__Email`, `BootstrapAdmin__Password`, `BootstrapAdmin__FirstName`, and `BootstrapAdmin__LastName` supplied through secure configuration. The command is accepted only in the Production environment.
 - Persist ASP.NET Core Data Protection keys in a durable location in deployed environments. Ephemeral container filesystems can invalidate protected tokens after a restart.

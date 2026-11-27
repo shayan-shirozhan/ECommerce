@@ -2,7 +2,7 @@
 
 ## Status
 
-The isolated Demo boundary, deterministic mock payment routes, and configuration-backed Demo account/catalog seed are implemented. OpenAPI/Scalar exposure, Demo email delivery, periodic data reset, and deployment automation remain planned follow-up work.
+The isolated Demo boundary, authenticated deterministic mock payment routes, and configuration-backed Demo account/catalog seed are implemented. OpenAPI/Scalar can be enabled explicitly for Demo. Demo email delivery, periodic data reset, and the dedicated deployment Compose setup remain follow-up work.
 
 ## Isolation rules
 
@@ -35,6 +35,18 @@ DemoSeed__CustomerPassword=<unique-customer-password>
 All four Demo seed passwords are required, must be different from one another, and must satisfy the configured ASP.NET Core Identity password policy: at least 8 characters, including uppercase, lowercase, digit, and non-alphanumeric characters. Startup fails with a configuration error if any value is missing, weak, or reused. Password values are not written to application logs.
 
 Do not reuse the Production database or Production credentials. Keep Demo database credentials separate and grant only the permissions required by the Demo application. Keep the seeded Admin password operator-only; never publish it or provide it to public Demo visitors.
+
+## API documentation
+
+OpenAPI and Scalar are disabled in Demo by default. To expose the interactive API reference for a public portfolio deployment, set:
+
+```text
+DemoApiDocumentation__Enabled=true
+```
+
+When enabled, the endpoints are available at `/openapi/v1.json` and `/scalar/v1` on the API host. The setting is accepted only when `ASPNETCORE_ENVIRONMENT=Demo`; enabling it in Development, Production, or another environment stops startup. This setting exposes API metadata and the interactive client only. It does not bypass authentication or authorization on API operations.
+
+Do not enable Development mode on a public deployment.
 
 ## Seeded accounts and catalog
 
