@@ -1,4 +1,5 @@
 using ECommerce.API.Contracts.Authentication;
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Exceptions;
 using ECommerce.Application.Features.Authentication.ForgotPassword;
 using ECommerce.Application.Features.Authentication.Login;
@@ -101,6 +102,7 @@ public class AuthController(ISender sender, IWebHostEnvironment environment) : C
     }
 
     [HttpPost("register")]
+    [WriteRateLimited]
     public async Task<IActionResult> Register(
         [FromBody] RegisterRequest request,
         CancellationToken cancellationToken)

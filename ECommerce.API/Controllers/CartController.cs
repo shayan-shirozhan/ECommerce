@@ -1,8 +1,9 @@
+using ECommerce.API.Contracts.Cart;
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Features.Cart.AddCartItem;
 using ECommerce.Application.Features.Cart.GetCart;
 using ECommerce.Application.Features.Cart.RemoveCartItem;
 using ECommerce.Application.Features.Cart.UpdateCartItem;
-using ECommerce.API.Contracts.Cart;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -26,6 +27,7 @@ public sealed class CartController(ISender sender) : ControllerBase
     }
 
     [HttpPut("items/{sellerOfferId:guid}")]
+    [WriteRateLimited]
     [ProducesResponseType(typeof(UpdateCartItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -42,6 +44,7 @@ public sealed class CartController(ISender sender) : ControllerBase
     }
 
     [HttpDelete("items/{sellerOfferId:guid}")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -55,6 +58,7 @@ public sealed class CartController(ISender sender) : ControllerBase
     }
 
     [HttpPost("items")]
+    [WriteRateLimited]
     [ProducesResponseType(typeof(AddCartItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

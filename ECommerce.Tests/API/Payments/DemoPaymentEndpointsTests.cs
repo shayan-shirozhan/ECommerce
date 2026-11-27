@@ -1,4 +1,5 @@
 using ECommerce.API.Payments;
+using ECommerce.API.RateLimiting;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
@@ -33,6 +34,8 @@ public sealed class DemoPaymentEndpointsTests
 
         AssertAuthorizedPostRoute(initiateRoute);
         AssertAuthorizedPostRoute(completeRoute);
+        AssertWriteRateLimited(initiateRoute);
+        AssertWriteRateLimited(completeRoute);
     }
 
     private static void AssertAuthorizedPostRoute(RouteEndpoint route)
@@ -43,5 +46,13 @@ public sealed class DemoPaymentEndpointsTests
                 Does.Contain("POST"));
             Assert.That(route.Metadata.GetOrderedMetadata<IAuthorizeData>(), Is.Not.Empty);
         });
+    }
+
+    private static void AssertWriteRateLimited(RouteEndpoint route)
+    {
+        Assert.That(
+            route.Metadata.GetMetadata<WriteRateLimitedAttribute>(),
+            Is.Not.Null,
+            $"Route '{route.RoutePattern.RawText}' must be marked as a write endpoint.");
     }
 }

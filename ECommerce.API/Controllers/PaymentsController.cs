@@ -1,5 +1,6 @@
 using ECommerce.API.Options;
 using ECommerce.API.Payments;
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Abstractions.Payments;
 using ECommerce.Application.Features.Payments.CompleteZarinPalPayment;
 using ECommerce.Application.Features.Payments.InitiatePayment;
@@ -20,6 +21,7 @@ public sealed class PaymentsController(
     IOptions<FrontendOptions> frontendOptions) : ControllerBase
 {
     [HttpPost("orders/{orderId:guid}/initiate")]
+    [WriteRateLimited]
     [ProducesResponseType(typeof(InitiatePaymentResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -45,6 +47,7 @@ public sealed class PaymentsController(
 
     [AllowAnonymous]
     [HttpGet("zarinpal/callback")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status302Found)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

@@ -1,3 +1,4 @@
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Features.Payments.CompleteMockPayment;
 using ECommerce.Application.Features.Payments.InitiatePayment;
 using ECommerce.Domain.Enums;
@@ -31,6 +32,7 @@ internal static class DemoPaymentEndpoints
                     return Results.Ok(result);
                 })
             .RequireAuthorization()
+            .WithMetadata(new WriteRateLimitedAttribute())
             .WithTags("Demo Payments")
             .WithName("InitiateDemoPayment")
             .Produces<InitiatePaymentResponse>(StatusCodes.Status200OK)
@@ -52,6 +54,7 @@ internal static class DemoPaymentEndpoints
                     return Results.Ok(result);
                 })
             .RequireAuthorization()
+            .WithMetadata(new WriteRateLimitedAttribute())
             .WithTags("Demo Payments")
             .WithName("CompleteDemoPayment")
             .Produces<CompleteMockPaymentResponse>(StatusCodes.Status200OK)
