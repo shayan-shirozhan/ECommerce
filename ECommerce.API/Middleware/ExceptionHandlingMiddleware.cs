@@ -49,6 +49,16 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
                 exception.Message,
                 context.RequestAborted);
         }
+        catch (RefreshTokenRotationInProgressException exception)
+        {
+            context.Response.Headers["Retry-After"] = "1";
+            await WriteProblemDetailsAsync(
+                context,
+                StatusCodes.Status409Conflict,
+                "Refresh token rotation in progress.",
+                exception.Message,
+                context.RequestAborted);
+        }
         catch (ConcurrencyConflictException exception)
         {
             await WriteProblemDetailsAsync(
@@ -122,6 +132,10 @@ public sealed class ExceptionHandlingMiddleware(RequestDelegate next, ILogger<Ex
             Instance = context.Request.Path
         };
 
-        await context.Response.WriteAsJsonAsync(problemDetails, cancellationToken);
+        await context.Response.WriteAsJsonAsync(
+            problemDetails,
+            options: null,
+            contentType: "application/problem+json",
+            cancellationToken: cancellationToken);
     }
 }

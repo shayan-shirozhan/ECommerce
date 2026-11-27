@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using ECommerce.Application.Abstractions.Identity;
+using ECommerce.Application.Exceptions;
 using ECommerce.Infrastructure;
 using ECommerce.Infrastructure.Identity;
 using ECommerce.Infrastructure.Persistence;
@@ -89,9 +90,10 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Reusing_a_revoked_token_should_revoke_all_tokens_in_its_family()
+    public async Task Reusing_a_revoked_token_after_the_grace_window_should_revoke_all_tokens_in_its_family()
     {
-        using var provider = CreateIdentityServiceProvider();
+        var timeProvider = new MutableTimeProvider(DateTimeOffset.UtcNow);
+        using var provider = CreateIdentityServiceProvider(timeProvider);
         using var scope = provider.CreateScope();
         var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
         var refreshTokenService = scope.ServiceProvider.GetRequiredService<IRefreshTokenService>();
@@ -102,6 +104,7 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
         var rotation = await refreshTokenService.RotateAsync(original.Token);
         Assert.That(rotation, Is.Not.Null);
 
+        timeProvider.Advance(TimeSpan.FromSeconds(6));
         var replayResult = await refreshTokenService.RotateAsync(original.Token);
         var familyId = await dbContext.RefreshTokens
             .Where(token => token.TokenHash == Convert.ToHexString(
@@ -115,6 +118,38 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
         {
             Assert.That(replayResult, Is.Null);
             Assert.That(activeTokensInFamily, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task Reusing_a_recently_rotated_token_within_the_grace_window_should_not_revoke_its_family()
+    {
+        using var provider = CreateIdentityServiceProvider();
+        using var scope = provider.CreateScope();
+        var identityService = scope.ServiceProvider.GetRequiredService<IIdentityService>();
+        var refreshTokenService = scope.ServiceProvider.GetRequiredService<IRefreshTokenService>();
+        var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
+
+        var user = await CreateUserAsync(identityService);
+        var original = await refreshTokenService.IssueAsync(user.Id);
+        var rotation = await refreshTokenService.RotateAsync(original.Token);
+        Assert.That(rotation, Is.Not.Null);
+
+        var exception = Assert.ThrowsAsync<RefreshTokenRotationInProgressException>(async () =>
+            await refreshTokenService.RotateAsync(original.Token));
+
+        var originalHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(original.Token)));
+        var familyId = await dbContext.RefreshTokens
+            .Where(token => token.TokenHash == originalHash)
+            .Select(token => token.FamilyId)
+            .SingleAsync();
+        var activeTokensInFamily = await dbContext.RefreshTokens
+            .CountAsync(token => token.FamilyId == familyId && token.RevokedAtUtc == null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(exception, Is.Not.Null);
+            Assert.That(activeTokensInFamily, Is.EqualTo(1));
         });
     }
 
@@ -213,7 +248,7 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Concurrent_rotation_attempts_should_not_leave_an_active_token_after_replay_detection()
+    public async Task Concurrent_rotation_attempts_should_allow_one_winner_without_revoking_its_replacement()
     {
         using var provider = CreateIdentityServiceProvider();
         using var firstScope = provider.CreateScope();
@@ -226,8 +261,8 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
         var original = await firstRefreshTokenService.IssueAsync(user.Id);
 
         var rotations = await Task.WhenAll(
-            firstRefreshTokenService.RotateAsync(original.Token),
-            secondRefreshTokenService.RotateAsync(original.Token));
+            TryRotateAsync(firstRefreshTokenService, original.Token),
+            TryRotateAsync(secondRefreshTokenService, original.Token));
 
         using var verificationScope = provider.CreateScope();
         var dbContext = verificationScope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
@@ -241,8 +276,9 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
 
         Assert.Multiple(() =>
         {
-            Assert.That(rotations.Count(rotation => rotation is not null), Is.LessThanOrEqualTo(1));
-            Assert.That(activeTokensInFamily, Is.Zero);
+            Assert.That(rotations.Count(rotation => rotation.Result is not null), Is.EqualTo(1));
+            Assert.That(rotations.Count(rotation => rotation.Exception is RefreshTokenRotationInProgressException), Is.EqualTo(1));
+            Assert.That(activeTokensInFamily, Is.EqualTo(1));
         });
     }
 
@@ -285,7 +321,7 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
         Assert.That(result, Is.Null);
     }
 
-    private ServiceProvider CreateIdentityServiceProvider()
+    private ServiceProvider CreateIdentityServiceProvider(TimeProvider? timeProvider = null)
     {
         var services = new ServiceCollection();
         services.AddLogging();
@@ -302,7 +338,33 @@ public sealed class RefreshTokenServiceTests : PostgresTestBase
             .Build();
 
         services.AddInfrastructure(configuration);
+        if (timeProvider is not null)
+            services.AddSingleton(timeProvider);
+
         return services.BuildServiceProvider();
+    }
+
+    private static async Task<(RefreshTokenRotationResult? Result, Exception? Exception)> TryRotateAsync(
+        IRefreshTokenService refreshTokenService,
+        string token)
+    {
+        try
+        {
+            return (await refreshTokenService.RotateAsync(token), null);
+        }
+        catch (Exception exception)
+        {
+            return (null, exception);
+        }
+    }
+
+    private sealed class MutableTimeProvider(DateTimeOffset initialUtc) : TimeProvider
+    {
+        private DateTimeOffset _utcNow = initialUtc;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan amount) => _utcNow = _utcNow.Add(amount);
     }
 
     private static Task<CreatedIdentityUser> CreateUserAsync(IIdentityService identityService)

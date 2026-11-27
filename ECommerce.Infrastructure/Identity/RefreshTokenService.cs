@@ -60,9 +60,15 @@ internal sealed class RefreshTokenService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        // A revoked token being presented again is a replay. Revoke every token in its family.
+        // A recently rotated token can be submitted by a second browser tab that started
+        // refreshing at the same time. Do not treat that narrow race as a replay while its
+        // replacement is still active; the API returns 409 so the client can retry with the
+        // cookie set by the winning request. Reuse outside this window remains a replay.
         if (currentToken.RevokedAtUtc.HasValue)
         {
+            if (await IsRecentSuccessfulRotationAsync(currentToken.Id, now, cancellationToken))
+                throw new RefreshTokenRotationInProgressException();
+
             await RevokeFamilyAsync(currentToken.FamilyId, now, cancellationToken);
             return null;
         }
@@ -103,6 +109,10 @@ internal sealed class RefreshTokenService(
         catch (ConcurrencyConflictException)
         {
             dbContext.ChangeTracker.Clear();
+
+            if (await IsRecentSuccessfulRotationAsync(currentToken.Id, now, cancellationToken))
+                throw new RefreshTokenRotationInProgressException();
+
             await RevokeFamilyAsync(currentToken.FamilyId, now, cancellationToken);
             return null;
         }
@@ -145,6 +155,37 @@ internal sealed class RefreshTokenService(
             .Where(token => token.UserId == userId && token.RevokedAtUtc == null)
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(token => token.RevokedAtUtc, (DateTime?)now),
+                cancellationToken);
+    }
+
+    private async Task<bool> IsRecentSuccessfulRotationAsync(
+        Guid tokenId,
+        DateTime nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var gracePeriodSeconds = options.Value.RotationGracePeriodSeconds;
+        if (gracePeriodSeconds <= 0)
+            return false;
+
+        var previousToken = await dbContext.RefreshTokens
+            .AsNoTracking()
+            .SingleOrDefaultAsync(token => token.Id == tokenId, cancellationToken);
+
+        if (previousToken?.RevokedAtUtc is not { } revokedAtUtc ||
+            previousToken.ReplacedByTokenId is not { } replacementTokenId ||
+            revokedAtUtc < nowUtc.AddSeconds(-gracePeriodSeconds))
+        {
+            return false;
+        }
+
+        // A family-wide revoke (logout, password reset, or confirmed replay) also revokes
+        // the replacement, so it must never be mistaken for a concurrent rotation.
+        return await dbContext.RefreshTokens
+            .AsNoTracking()
+            .AnyAsync(token =>
+                    token.Id == replacementTokenId &&
+                    token.RevokedAtUtc == null &&
+                    token.ExpiresAtUtc > nowUtc,
                 cancellationToken);
     }
 

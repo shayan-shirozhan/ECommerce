@@ -169,6 +169,12 @@ public static class DependencyInjection
             .Bind(configuration.GetSection(RefreshTokenOptions.SectionName))
             .Validate(options => options.ExpirationDays is > 0 and <= 90,
                 "RefreshTokens:ExpirationDays must be between 1 and 90 days.")
+            .Validate(options => options.RetentionDays is > 0 and <= 365,
+                "RefreshTokens:RetentionDays must be between 1 and 365 days.")
+            .Validate(options => options.CleanupIntervalHours is > 0 and <= 168,
+                "RefreshTokens:CleanupIntervalHours must be between 1 and 168 hours.")
+            .Validate(options => options.RotationGracePeriodSeconds is >= 0 and <= 30,
+                "RefreshTokens:RotationGracePeriodSeconds must be between 0 and 30 seconds.")
             .ValidateOnStart();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>

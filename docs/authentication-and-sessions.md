@@ -14,7 +14,7 @@ The JWT lifetime is configured by `Jwt:ExpirationMinutes`.
 
 A successful login also creates a refresh-token session. Refresh tokens are generated from 64 cryptographically secure random bytes. The raw value is returned only as an `HttpOnly` cookie; PostgreSQL stores its SHA-256 hash, never the raw token.
 
-The refresh-token lifetime is configured by `RefreshTokens:ExpirationDays` (default: 30 days; allowed range: 1–90 days).
+The refresh-token lifetime is configured by `RefreshTokens:ExpirationDays` (default: 30 days; allowed range: 1–90 days). Terminal token records are retained for `RefreshTokens:RetentionDays` (default: 30 days; allowed range: 1–365 days) after revocation or, when never revoked, after expiration. The cleanup worker runs at startup and every `RefreshTokens:CleanupIntervalHours` (default: 24 hours; allowed range: 1–168 hours). Concurrent refresh requests use `RefreshTokens:RotationGracePeriodSeconds` (default: 5 seconds; allowed range: 0–30 seconds; `0` disables the grace window).
 
 Cookie settings:
 
@@ -32,11 +32,13 @@ Every successful login creates a new token family, allowing a user to have indep
 
 1. Hashes the presented cookie value and looks up the matching database record.
 2. Rejects unknown or expired tokens.
-3. Rejects a revoked token and revokes every still-active token in that token's family. This is the replay-detection response.
+3. For a revoked token, normally revokes every still-active token in its family as a replay response. The exception is a token rotated within the configured grace window while its replacement remains active: the API returns `409 Conflict` with `Retry-After: 1` without issuing another token or clearing the cookie.
 4. For an active token, atomically revokes it and creates its replacement in the same family.
-5. Uses `RevokedAtUtc` as an optimistic concurrency token so two concurrent requests cannot both rotate the same token successfully. A concurrency loser revokes the family.
+5. Uses `RevokedAtUtc` as an optimistic concurrency token so two concurrent requests cannot both rotate the same refresh token successfully. The concurrency loser receives the same `409` response during the grace window. After the window, reuse of the old token revokes the family.
 
 Logout revokes the entire token family associated with the supplied refresh token and clears the browser cookie. This also invalidates a replacement token if logout races with rotation or arrives using a recently rotated cookie; other independent device sessions (different families) remain active.
+
+The cleanup worker deletes terminal records only after the configured retention period. For revoked tokens, retention is measured from `RevokedAtUtc`; for tokens that were never revoked, it is measured from `ExpiresAtUtc`. This keeps old hashes available for replay detection for the full retention period while preventing the table from growing indefinitely. Once a record is deleted, a replay of that token is treated as an unknown token and can no longer identify its former family.
 
 ```mermaid
 stateDiagram-v2
@@ -44,7 +46,9 @@ stateDiagram-v2
     Active --> Rotated: successful refresh
     Active --> Revoked: logout
     Active --> Expired: expiry reached
-    Rotated --> FamilyRevoked: old token reused
+    Rotated --> RetryableConflict: old token reused inside grace window
+    RetryableConflict --> Rotated: client retries with replacement cookie
+    Rotated --> FamilyRevoked: old token reused after grace window
     FamilyRevoked --> [*]
     Revoked --> [*]
     Expired --> [*]
@@ -92,7 +96,7 @@ All authentication endpoints use the existing `auth` rate-limit policy.
 4. Call `POST /api/auth/refresh`; the HTTP client must retain and send the `ecommerce.refresh-token` cookie from login.
 5. Verify the response contains a new access token and that the refresh cookie has been replaced.
 6. Call `POST /api/auth/logout` and then try refreshing again; the refresh attempt must return `401 Unauthorized`.
-7. For replay detection, capture a refresh cookie value before rotation, rotate it once, then submit the old value again. The replay must fail and invalidate the replacement token from the same family.
+7. To test the two-tab race, send two `POST /api/auth/refresh` requests concurrently with the same cookie. One should return `200 OK` and set the replacement cookie; the other should return `409 Conflict` with `Retry-After: 1` and must not clear the cookie. Retry after the winning response has updated the shared cookie. Then replay the captured old cookie after the grace window; it must return `401 Unauthorized` and invalidate the replacement token from the same family.
 8. Call `GET /api/users/me` with the access token and verify that the response contains the current user's id, email, first name, last name, and seller status.
 9. Call `PUT /api/users/me` with new `firstName` and `lastName` values, then call GET again and verify the names were updated. The email and seller status are not editable through this endpoint; email changes require a separate verification flow.
 10. Call `PUT /api/users/me/password` with the current password and a new password that satisfies the configured Identity password policy. The request returns `204 No Content`; an incorrect current password or a new password that fails the Identity policy returns `400 Bad Request`.
