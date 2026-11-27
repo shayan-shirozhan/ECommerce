@@ -2,7 +2,7 @@
 
 ## Status
 
-The Demo environment boundary and its first payment slice are implemented. The isolated Demo environment exposes dedicated initiate/complete payment endpoints backed by the deterministic `DemoPaymentGateway`. Demo account/catalog seeding, API documentation exposure, deployment automation, and the remaining public-demo operational controls are still pending.
+The isolated Demo boundary, deterministic mock payment routes, and configuration-backed Demo account/catalog seed are implemented. OpenAPI/Scalar exposure, Demo email delivery, periodic data reset, and deployment automation remain planned follow-up work.
 
 ## Isolation rules
 
@@ -13,35 +13,53 @@ The Demo environment boundary and its first payment slice are implemented. The i
 - Startup rejects a Demo connection string that resolves to the same PostgreSQL host, port, and database name as the normal application connection string, even when credentials differ. The deployment must also ensure that different hostnames or proxies do not point to the same underlying database resource; that physical infrastructure aliasing cannot be proven from a connection string alone.
 - ZarinPal must remain disabled in Demo. Demo registers only its deterministic mock gateway.
 - Development retains its existing randomized mock gateway and Development email sender.
-- Demo does not register Development-only services or enable Development email logging. OpenAPI/Scalar exposure is a separate pending decision; the current Demo configuration does not expose either endpoint.
+- Demo does not register Development-only services, expose Development OpenAPI/Scalar endpoints, or enable Development email logging.
 - Demo automatically applies EF Core migrations to its dedicated Demo database. Production migrations remain a separate deployment step.
+- Demo seed credentials are validated before the application applies migrations or seeds the Demo database.
 
 ## Required environment configuration
 
-Configure these values in the Demo deployment secret/environment configuration:
+Configure these values in the Demo deployment secret/environment configuration. Never commit actual passwords to `appsettings*.json`, `.env.example`, or source control.
 
 ```text
 ASPNETCORE_ENVIRONMENT=Demo
 DemoPayments__Enabled=true
 ConnectionStrings__DemoECommerceDb=Host=<demo-db-host>;Database=ecommerce_demo;Username=<user>;Password=<secret>
 ZarinPal__Enabled=false
+DemoSeed__AdminPassword=<unique-admin-password>
+DemoSeed__SellerPassword=<unique-seller-password>
+DemoSeed__SecondSellerPassword=<unique-second-seller-password>
+DemoSeed__CustomerPassword=<unique-customer-password>
 ```
 
-Do not reuse the Production database or Production credentials. Keep the Demo database credentials separate and grant only the permissions required by the Demo application.
+All four Demo seed passwords are required, must be different from one another, and must satisfy the configured ASP.NET Core Identity password policy: at least 8 characters, including uppercase, lowercase, digit, and non-alphanumeric characters. Startup fails with a configuration error if any value is missing, weak, or reused. Password values are not written to application logs.
+
+Do not reuse the Production database or Production credentials. Keep Demo database credentials separate and grant only the permissions required by the Demo application. Keep the seeded Admin password operator-only; never publish it or provide it to public Demo visitors.
+
+## Seeded accounts and catalog
+
+The Demo seed creates these accounts in its isolated database:
+
+| Role | Email | Use |
+|---|---|---|
+| Admin | `admin@test.com` | Operator-only administration and manual-review operations |
+| Seller | `seller@test.com` | First seller account |
+| Seller | `seller2@test.com` | Second seller account for multi-seller orders |
+| Customer | `customer@test.com` | Customer cart, checkout, payment, and order history |
+
+The password for each account comes from its matching `DemoSeed__...Password` setting. The seeder uses those values when it creates a missing account; it does not overwrite the password of an account that already exists. Changing a setting therefore does not rotate an existing account password. Existing suspended or rejected seller accounts are not automatically reactivated.
+
+The catalog seed creates or ensures 5 brands, 8 categories (4 root and 4 child categories), 6 products, 12 variants, 18 HTTPS image records, and 18 active seller offers across two active sellers. Prices are sample amounts in Toman and stock values are for demonstration only.
+
+Seeding is idempotent: repeated application startup does not duplicate seeded users or catalog records. Existing inactive products, variants, offers, and suspended seller accounts are not automatically reactivated. The current seed does not delete visitor-created carts, wishlists, orders, or other Demo activity; a separate periodic reset mechanism is still pending.
 
 ## Payment behavior
 
 `DemoPaymentGateway` always returns a successful simulated result with a stable transaction identifier derived from the local payment ID. It does not contact ZarinPal or transfer funds. The existing Development `MockPaymentGateway` remains randomized and is not used in Demo.
 
-### Demo payment endpoints
-
-The authenticated customer payment flow uses these routes only when `ASPNETCORE_ENVIRONMENT=Demo` and `DemoPayments:Enabled=true`:
+The authenticated Demo payment flow is:
 
 - `POST /api/demo/payments/orders/{orderId}/initiate` creates a pending payment using `PaymentMethod.Mock`.
 - `POST /api/demo/payments/{paymentId}/complete` completes that pending payment through `DemoPaymentGateway`.
 
-Both commands retain the existing ownership, order-state, payment-window, and payment-state checks. The completion handler only finds a payment belonging to the authenticated customer. The endpoints are not mapped in Development, Production, or other environments. The Development-only `/api/payments/.../initiate-mock` and `/complete-mock` routes remain unchanged.
-
-The deterministic gateway always simulates success, returns a stable transaction identifier derived from the payment ID, and never contacts a provider or transfers real funds.
-
-Demo account/catalog seeding and the remaining operational controls are still pending.
+Both endpoints are mapped only when the Demo environment guard is enabled. Existing order ownership, payment ownership, order-state, payment-window, and payment-state checks remain in the application handlers. The Development-only `/api/payments/.../initiate-mock` and `/complete-mock` routes are not exposed in Demo.
