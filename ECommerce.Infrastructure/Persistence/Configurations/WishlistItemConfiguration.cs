@@ -9,6 +9,7 @@ public sealed class WishlistItemConfiguration : IEntityTypeConfiguration<Wishlis
     public void Configure(EntityTypeBuilder<WishlistItem> builder)
     {
         builder.HasKey(item => item.Id);
+        builder.Property(item => item.Id).ValueGeneratedNever();
 
         builder.HasOne<Wishlist>()
             .WithMany(wishlist => wishlist.Items)

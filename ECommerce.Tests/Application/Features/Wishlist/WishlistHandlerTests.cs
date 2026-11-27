@@ -42,6 +42,33 @@ public sealed class WishlistHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Add_should_add_a_different_product_to_an_existing_wishlist()
+    {
+        var (userId, firstProductId, _) = await SeedProductAsync();
+        var (_, secondProductId, _) = await SeedProductAsync();
+        using var provider = CreateProvider(userId);
+
+        var firstResponse = await AddAsync(provider, firstProductId);
+        var secondResponse = await AddAsync(provider, secondProductId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(firstResponse.Added, Is.True);
+            Assert.That(secondResponse.Added, Is.True);
+            Assert.That(secondResponse.ProductId, Is.EqualTo(secondProductId));
+        });
+
+        await using var context = CreateDbContext();
+        var wishlist = await context.Wishlists
+            .Include(entity => entity.Items)
+            .SingleAsync(entity => entity.UserId == userId);
+
+        Assert.That(
+            wishlist.Items.Select(item => item.ProductId),
+            Is.EquivalentTo(new[] { firstProductId, secondProductId }));
+    }
+
+    [Test]
     public async Task Add_should_be_idempotent_when_product_already_exists()
     {
         var (userId, productId, _) = await SeedProductAsync();

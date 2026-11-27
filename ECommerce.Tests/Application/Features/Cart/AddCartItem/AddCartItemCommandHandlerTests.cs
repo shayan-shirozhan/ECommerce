@@ -36,6 +36,33 @@ public sealed class AddCartItemCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
+    public async Task Handle_should_add_different_offer_to_existing_cart()
+    {
+        var (userId, firstOfferId, secondOfferId) = await SeedOffersForDifferentSellersAsync();
+        using var provider = CreateProvider(userId);
+
+        var firstResponse = await SendAsync(provider, new AddCartItemCommand(firstOfferId, 2));
+        var secondResponse = await SendAsync(provider, new AddCartItemCommand(secondOfferId, 1));
+
+        Assert.That(firstResponse.Quantity, Is.EqualTo(2));
+        Assert.That(secondResponse.SellerOfferId, Is.EqualTo(secondOfferId));
+        Assert.That(secondResponse.Quantity, Is.EqualTo(1));
+
+        await using var verificationContext = CreateDbContext();
+        var cart = await verificationContext.Carts
+            .Include(entity => entity.Items)
+            .SingleAsync(entity => entity.UserId == userId);
+
+        Assert.That(cart.Items, Has.Count.EqualTo(2));
+        Assert.That(
+            cart.Items.Single(item => item.SellerOfferId == firstOfferId).Quantity,
+            Is.EqualTo(2));
+        Assert.That(
+            cart.Items.Single(item => item.SellerOfferId == secondOfferId).Quantity,
+            Is.EqualTo(1));
+    }
+
+    [Test]
     public async Task Handle_should_increase_quantity_when_offer_already_exists_in_cart()
     {
         var (userId, offerId) = await SeedOfferAsync(stock: 10);
@@ -122,6 +149,57 @@ public sealed class AddCartItemCommandHandlerTests : PostgresTestBase
 
         Assert.ThrowsAsync<UnauthorizedException>(
             async () => await SendAsync(provider, new AddCartItemCommand(Guid.NewGuid(), 1)));
+    }
+
+    private async Task<(Guid CustomerId, Guid FirstOfferId, Guid SecondOfferId)>
+        SeedOffersForDifferentSellersAsync()
+    {
+        var customerId = Guid.NewGuid();
+        var firstSellerId = Guid.NewGuid();
+        var secondSellerId = Guid.NewGuid();
+        var suffix = Guid.NewGuid().ToString("N");
+
+        static ApplicationUser CreateUser(Guid id, string userName)
+        {
+            return new ApplicationUser
+            {
+                Id = id,
+                UserName = userName,
+                NormalizedUserName = userName.ToUpperInvariant(),
+                Email = $"{userName}@example.test",
+                NormalizedEmail = $"{userName}@example.test".ToUpperInvariant(),
+                FirstName = "Cart",
+                LastName = "Test"
+            };
+        }
+
+        var customer = CreateUser(customerId, $"cart-customer-{suffix}");
+        var firstSeller = CreateUser(firstSellerId, $"cart-seller-one-{suffix}");
+        var secondSeller = CreateUser(secondSellerId, $"cart-seller-two-{suffix}");
+
+        var brand = Brand.Create($"Cart Multi-Seller Brand {suffix}");
+        var category = Category.Create($"Cart Multi-Seller Category {suffix}");
+        var product = Product.Create(
+            $"Cart Multi-Seller Product {suffix}",
+            "Test product description.",
+            brand.Id,
+            category.Id);
+        product.Activate();
+
+        var variant = ProductVariant.Create(product, $"CART-MULTI-{suffix}", "Default");
+        variant.Activate(product);
+
+        var firstOffer = SellerOffer.Create(firstSellerId, variant.Id, 100m, 10);
+        var secondOffer = SellerOffer.Create(secondSellerId, variant.Id, 110m, 10);
+        firstOffer.Activate();
+        secondOffer.Activate();
+
+        await using var context = CreateDbContext();
+        context.Users.AddRange(customer, firstSeller, secondSeller);
+        context.AddRange(brand, category, product, variant, firstOffer, secondOffer);
+        await context.SaveChangesAsync();
+
+        return (customerId, firstOffer.Id, secondOffer.Id);
     }
 
     private async Task<(Guid UserId, Guid OfferId)> SeedOfferAsync(int stock, bool activateOffer = true)

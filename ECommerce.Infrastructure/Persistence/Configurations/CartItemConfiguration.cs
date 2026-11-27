@@ -9,13 +9,14 @@ public class CartItemConfiguration : IEntityTypeConfiguration<CartItem>
     public void Configure(EntityTypeBuilder<CartItem> builder)
     {
         builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).ValueGeneratedNever();
         builder.Property(x => x.Quantity).IsRequired();
 
         builder.HasOne<Cart>()
             .WithMany(x => x.Items)
             .HasForeignKey(x => x.CartId)
             .OnDelete(DeleteBehavior.Cascade);
-        
+
         builder.HasOne<SellerOffer>()
             .WithMany()
             .HasForeignKey(x => x.SellerOfferId)
