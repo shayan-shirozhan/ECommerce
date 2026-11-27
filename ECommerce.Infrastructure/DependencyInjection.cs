@@ -105,7 +105,24 @@ public static class DependencyInjection
             .AddEntityFrameworkStores<ECommerceDbContext>()
             .AddDefaultTokenProviders();
 
-        services.AddDataProtection();
+        var dataProtectionApplicationName = configuration["DataProtection:ApplicationName"];
+        var dataProtectionBuilder = services.AddDataProtection()
+            .SetApplicationName(
+                string.IsNullOrWhiteSpace(dataProtectionApplicationName)
+                    ? "ECommerce.API"
+                    : dataProtectionApplicationName);
+
+        var dataProtectionKeysPath = configuration["DataProtection:KeysPath"];
+        if (!string.IsNullOrWhiteSpace(dataProtectionKeysPath))
+        {
+            if (!Path.IsPathFullyQualified(dataProtectionKeysPath))
+            {
+                throw new InvalidOperationException(
+                    "DataProtection:KeysPath must be an absolute path.");
+            }
+
+            dataProtectionBuilder.PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+        }
 
         var passwordResetTokenLifespanMinutes = configuration.GetValue(
             $"{PasswordResetEmailOptions.SectionName}:{nameof(PasswordResetEmailOptions.TokenLifespanMinutes)}",

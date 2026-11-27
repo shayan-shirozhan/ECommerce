@@ -34,6 +34,7 @@ services:
       ASPNETCORE_ENVIRONMENT: Demo
       ASPNETCORE_HTTP_PORTS: "8080"
       HOME: /home/app
+      DataProtection__KeysPath: /home/app/.aspnet/DataProtection-Keys
       ConnectionStrings__DemoECommerceDb: "Host=postgres;Port=5432;Database=ecommerce_demo;Username=${DEMO_POSTGRES_USER:-ecommerce_demo};Password=${DEMO_POSTGRES_PASSWORD:?Set DEMO_POSTGRES_PASSWORD in .env.demo};GSS Encryption Mode=Disable"
       Jwt__SecretKey: "${DEMO_JWT_SECRET_KEY:?Set DEMO_JWT_SECRET_KEY in .env.demo}"
       Jwt__Issuer: ECommerce.API

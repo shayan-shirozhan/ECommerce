@@ -310,7 +310,9 @@ The refresh cookie uses `SameSite=Strict`. A browser frontend should therefore b
 - ZarinPal is disabled by default; configure it explicitly before enabling real payment traffic. Keep merchant credentials and callback/frontend URLs outside source control.
 - Demo requires `SmtpEmail:Enabled=true`, a valid sender address, a TLS SMTP mode (`StartTls` or `SslOnConnect`), and `PasswordResetEmail:FrontendUrl`. Production can use the same MailKit sender by enabling `SmtpEmail`; never use plaintext SMTP outside Development. Supply SMTP credentials through environment variables or a secret manager.
 - Development seed accounts and catalog data are not production bootstrap data. Production admin creation uses the explicit `--bootstrap-admin` workflow with `BootstrapAdmin__Email`, `BootstrapAdmin__Password`, `BootstrapAdmin__FirstName`, and `BootstrapAdmin__LastName` supplied through secure configuration. The command is accepted only in the Production environment.
-- Persist ASP.NET Core Data Protection keys in a durable location in deployed environments. Ephemeral container filesystems can invalidate protected tokens after a restart.
+- `AllowedHosts` defaults to `localhost;127.0.0.1` and must be overridden with the API's explicit host names in Production (semicolon-separated, without schemes or ports). Wildcard hosts are rejected at Production startup.
+- Production requires `DataProtection__KeysPath` to be an absolute, durable, writable directory. Mount persistent storage there and share the same key ring across API replicas; `DataProtection:ApplicationName` defaults to `ECommerce.API`. Ephemeral container filesystems can invalidate protected Identity tokens after a restart.
+- HSTS (one-year max age) is enabled outside Development; it is emitted only for HTTPS requests. Defensive response headers (`X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy`) are added in every environment. Configure trusted forwarded headers when TLS terminates at a reverse proxy.
 
 ## Build and tests
 

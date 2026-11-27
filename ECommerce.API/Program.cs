@@ -36,6 +36,17 @@ var isDemoApiDocumentationEnabled = DemoApiDocumentationEnvironment.ValidateAndI
     builder.Configuration);
 var zarinPalEnabled = builder.Configuration.GetValue<bool>("ZarinPal:Enabled");
 
+if (builder.Environment.IsProduction())
+    ProductionSecurityConfigurationValidator.Validate(builder.Configuration);
+
+if (!isDevelopment)
+{
+    builder.Services.AddHsts(options =>
+    {
+        options.MaxAge = TimeSpan.FromDays(365);
+    });
+}
+
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
     loggerConfiguration
         .ReadFrom.Configuration(context.Configuration)
@@ -225,6 +236,9 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseForwardedHeaders();
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
