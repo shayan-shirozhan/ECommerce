@@ -532,9 +532,9 @@ public sealed class ApiEndToEndTests : PostgresTestBase
         await RegisterAsync(email);
 
         using (var loginWithoutOrigin = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
-               {
-                   Content = JsonContent.Create(new { email, password = CustomerPassword })
-               })
+        {
+            Content = JsonContent.Create(new { email, password = CustomerPassword })
+        })
         using (var rejectedLogin = await _client.SendAsync(loginWithoutOrigin))
             Assert.That(rejectedLogin.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
 
