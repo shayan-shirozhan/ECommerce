@@ -49,7 +49,8 @@ builder.Services.AddInfrastructure(
     enableMockPaymentGateway: isDevelopment,
     enableDevelopmentEmailSender: isDevelopment,
     enableDemoPaymentGateway: isDemo,
-    connectionStringName: isDemo ? "DemoECommerceDb" : "ECommerceDb");
+    connectionStringName: isDemo ? "DemoECommerceDb" : "ECommerceDb",
+    requireSmtpEmailSender: isDemo);
 
 if (isDemo)
 {

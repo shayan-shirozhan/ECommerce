@@ -13,6 +13,19 @@ Set these values in the deployment secret store / process environment. Do not pl
 
 The production CORS origin list is intentionally empty by default. Configure the real frontend origin(s) before enabling browser clients. CORS is not an authentication mechanism.
 
+## Password-reset email delivery
+
+The application can send password-reset messages through the shared MailKit SMTP sender. To enable it in Production, configure:
+
+- `SmtpEmail__Enabled=true`
+- `SmtpEmail__Host` and `SmtpEmail__Port`
+- `SmtpEmail__Security=StartTls` or `SslOnConnect` (plaintext SMTP is rejected outside Development)
+- `SmtpEmail__FromAddress` and `SmtpEmail__FromName`
+- `PasswordResetEmail__FrontendUrl` – absolute HTTPS URL of the frontend reset-password page, without user information, query, or fragment
+- `SmtpEmail__Username` and `SmtpEmail__Password` when the relay requires authentication; provide both or neither
+
+Keep SMTP credentials in the deployment secret store or process environment. The SMTP sender does not log reset links or email bodies. When `SmtpEmail__Enabled` is not true, the API retains `DisabledEmailSender`: password-reset requests keep their generic response, but no email is sent. The local Development Compose stack uses Mailpit; do not expose Mailpit as a production mail relay or public inbox.
+
 When the API is behind a reverse proxy or load balancer, set `ForwardedHeaders__KnownProxies__0` (and subsequent indices) to the proxy IP addresses. The API enables `X-Forwarded-For` and `X-Forwarded-Proto` only for those trusted proxies. Do not trust arbitrary `X-Forwarded-For` values; the auth rate limiter partitions by the remote IP address observed by the application.
 
 ## Deploy database migrations

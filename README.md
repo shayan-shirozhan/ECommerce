@@ -14,6 +14,7 @@ A multi-vendor marketplace backend built with **.NET 10**, **ASP.NET Core**, and
 - Optimistic concurrency for sensitive state transitions.
 - ZarinPal payment initiation, callback verification, background reconciliation, and administrative manual resolution.
 - PostgreSQL persistence with EF Core migrations.
+- Password-reset email delivery through MailKit SMTP, with Mailpit capture in the local Docker Compose stack.
 - NUnit tests, including PostgreSQL integration tests with Testcontainers and API end-to-end tests with `WebApplicationFactory`.
 - Development-only marketplace seed data for a quick local demonstration.
 
@@ -27,6 +28,7 @@ A multi-vendor marketplace backend built with **.NET 10**, **ASP.NET Core**, and
 | Persistence | PostgreSQL, Entity Framework Core |
 | Identity and security | ASP.NET Core Identity, JWT, HttpOnly refresh-token cookie, token rotation and replay detection |
 | Payments | ZarinPal integration, payment verification and reconciliation, Development-only mock endpoints, isolated authenticated Demo payment endpoints |
+| Email | MailKit SMTP, Mailpit for local email capture |
 | Logging and health | Serilog, `/health/live`, `/health/ready` |
 | API exploration | OpenAPI, Scalar (Development; opt-in in the isolated Demo environment) |
 | Testing | NUnit, Testcontainers, `WebApplicationFactory` |
@@ -70,7 +72,7 @@ The quickest way to run the API and PostgreSQL locally is Docker Compose.
 ### Prerequisites
 
 - Docker Desktop (or Docker Engine with the Compose plugin).
-- Internet access to pull the .NET and PostgreSQL images.
+- Internet access to pull the .NET, PostgreSQL, and Mailpit images.
 
 ### 1. Create your local environment file
 
@@ -95,7 +97,7 @@ docker compose up --build -d
 docker compose logs -f api
 ```
 
-The API waits for PostgreSQL to become healthy. In the `Development` environment, startup applies EF Core migrations and then seeds development roles, accounts, and marketplace catalog data.
+The API waits for PostgreSQL to become healthy. In the `Development` environment, startup applies EF Core migrations and then seeds development roles, accounts, and marketplace catalog data. Docker Compose also routes password-reset email to Mailpit; no email leaves your machine.
 
 ### 3. Open the API
 
@@ -103,6 +105,7 @@ The API waits for PostgreSQL to become healthy. In the `Development` environment
 - OpenAPI JSON: <http://localhost:8080/openapi/v1.json>
 - Liveness: <http://localhost:8080/health/live>
 - Readiness: <http://localhost:8080/health/ready>
+- Mailpit inbox: <http://localhost:8025>
 
 Scalar and the generated OpenAPI document are exposed in Development. They can also be explicitly enabled in the isolated Demo environment with `DemoApiDocumentation__Enabled=true`; the setting is rejected in every other environment. Keep `ASPNETCORE_ENVIRONMENT=Demo` for a public demo rather than deploying Development.
 
@@ -120,7 +123,7 @@ To remove the local database volume as well (this permanently deletes the local 
 docker compose down --volumes
 ```
 
-The API and PostgreSQL ports bind to loopback by default. The supplied `.env.example` publishes PostgreSQL on host port `15432` (`POSTGRES_PORT=15432`) while the container itself listens on `5432`. Change `POSTGRES_PORT` if `15432` is already in use; when running the API on the host, use the same host port in its connection string. The API container connects to `postgres:5432` over the Compose network.
+The API, PostgreSQL, and Mailpit ports bind to loopback by default. The supplied `.env.example` publishes PostgreSQL on host port `15432` (`POSTGRES_PORT=15432`), Mailpit SMTP on `1025`, and its web inbox on `8025`; the containers use their internal service ports. Change the corresponding environment variables if a port is already in use. The API container connects to PostgreSQL at `postgres:5432` and Mailpit at `mailpit:1025` over the Compose network.
 
 ## Run the API from the host
 
@@ -143,7 +146,7 @@ Then run:
 dotnet run --project ECommerce.API --launch-profile http
 ```
 
-The API uses the URLs configured in `ECommerce.API/Properties/launchSettings.json`; the `http` profile listens on `http://localhost:5115`. Open `/scalar/v1` on that address. If you use the `https` profile instead, use `https://localhost:7102`. The default host-side PostgreSQL port in `.env.example` is `15432`; if you change `POSTGRES_PORT` or `POSTGRES_PASSWORD`, update the connection string accordingly.
+The API uses the URLs configured in `ECommerce.API/Properties/launchSettings.json`; the `http` profile listens on `http://localhost:5115`. Open `/scalar/v1` on that address. If you use the `https` profile instead, use `https://localhost:7102`. When running the API directly on the host, the existing Development email sender logs reset links; Mailpit SMTP is enabled only by the Docker Compose configuration.
 
 ## Development demo accounts and catalog
 
@@ -159,6 +162,12 @@ The Development seeder creates local-only accounts with the following roles:
 These credentials must never be used outside a local Development environment.
 
 The demo catalog includes multiple brands, a hierarchical category tree, products, variants, HTTPS product images, and seller offers from two active sellers. Catalog seeding is designed to be idempotent: restarting the Development API should not create duplicate demo catalog records. See [Development seed](docs/development-seed.md).
+
+### Test password-reset email locally
+
+When using Docker Compose, send `POST /api/auth/forgot-password` with `{"email":"customer@test.com"}` and open <http://localhost:8025> to inspect the captured message. Mailpit is bound to loopback and does not deliver messages to real recipients. The reset link uses `PasswordResetEmail:FrontendUrl`; the local API configuration points to the Development frontend route.
+
+When running the API directly on the host without SMTP settings, the Development-only email sender writes the reset link to the application log instead. Never enable that Development behavior on a public deployment.
 
 ## Five-minute API demo
 
@@ -285,6 +294,7 @@ The refresh cookie uses `SameSite=Strict`. A browser frontend should therefore b
 - EF Core migrations are applied automatically only in Development. Apply migrations as an explicit deployment step in non-development environments before starting the API.
 - Scalar and generated OpenAPI are enabled automatically only in Development. In the isolated Demo environment, they are opt-in through `DemoApiDocumentation__Enabled=true`; the setting is rejected outside Demo. Do not enable the Development environment on a public deployment.
 - ZarinPal is disabled by default; configure it explicitly before enabling real payment traffic. Keep merchant credentials and callback/frontend URLs outside source control.
+- Demo requires `SmtpEmail:Enabled=true`, a valid sender address, a TLS SMTP mode (`StartTls` or `SslOnConnect`), and `PasswordResetEmail:FrontendUrl`. Production can use the same MailKit sender by enabling `SmtpEmail`; never use plaintext SMTP outside Development. Supply SMTP credentials through environment variables or a secret manager.
 - Development seed accounts and catalog data are not production bootstrap data. Production admin creation uses the explicit `--bootstrap-admin` workflow with `BootstrapAdmin__Email`, `BootstrapAdmin__Password`, `BootstrapAdmin__FirstName`, and `BootstrapAdmin__LastName` supplied through secure configuration. The command is accepted only in the Production environment.
 - Persist ASP.NET Core Data Protection keys in a durable location in deployed environments. Ephemeral container filesystems can invalidate protected tokens after a restart.
 
