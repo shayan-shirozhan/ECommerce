@@ -43,3 +43,6 @@ appsettings.Local.json
 
 # Publish
 publish/
+
+# Checked-in template only; actual .env.* files remain ignored.
+!.env.demo.example

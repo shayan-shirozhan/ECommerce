@@ -1,0 +1,91 @@
+name: ecommerce-public-demo
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecommerce_demo
+      POSTGRES_USER: ${DEMO_POSTGRES_USER:-ecommerce_demo}
+      POSTGRES_PASSWORD: ${DEMO_POSTGRES_PASSWORD:?Set DEMO_POSTGRES_PASSWORD in .env.demo}
+    volumes:
+      - demo_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    networks:
+      - demo_backend
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      ASPNETCORE_ENVIRONMENT: Demo
+      ASPNETCORE_HTTP_PORTS: "8080"
+      HOME: /home/app
+      ConnectionStrings__DemoECommerceDb: "Host=postgres;Port=5432;Database=ecommerce_demo;Username=${DEMO_POSTGRES_USER:-ecommerce_demo};Password=${DEMO_POSTGRES_PASSWORD:?Set DEMO_POSTGRES_PASSWORD in .env.demo};GSS Encryption Mode=Disable"
+      Jwt__SecretKey: "${DEMO_JWT_SECRET_KEY:?Set DEMO_JWT_SECRET_KEY in .env.demo}"
+      Jwt__Issuer: ECommerce.API
+      Jwt__Audience: ECommerce.API
+      Jwt__ExpirationMinutes: "60"
+      DemoPayments__Enabled: "true"
+      DemoApiDocumentation__Enabled: "${DEMO_API_DOCUMENTATION_ENABLED:-false}"
+      DemoSeed__AdminPassword: "${DEMO_SEED_ADMIN_PASSWORD:?Set DEMO_SEED_ADMIN_PASSWORD in .env.demo}"
+      DemoSeed__SellerPassword: "${DEMO_SEED_SELLER_PASSWORD:?Set DEMO_SEED_SELLER_PASSWORD in .env.demo}"
+      DemoSeed__SecondSellerPassword: "${DEMO_SEED_SECOND_SELLER_PASSWORD:?Set DEMO_SEED_SECOND_SELLER_PASSWORD in .env.demo}"
+      DemoSeed__CustomerPassword: "${DEMO_SEED_CUSTOMER_PASSWORD:?Set DEMO_SEED_CUSTOMER_PASSWORD in .env.demo}"
+      ZarinPal__Enabled: "false"
+      SmtpEmail__Enabled: "true"
+      SmtpEmail__Host: "${SMTP_EMAIL_HOST:?Set SMTP_EMAIL_HOST in .env.demo}"
+      SmtpEmail__Port: "${SMTP_EMAIL_PORT:-587}"
+      SmtpEmail__Security: "${SMTP_EMAIL_SECURITY:-StartTls}"
+      SmtpEmail__Username: "${SMTP_EMAIL_USERNAME:-}"
+      SmtpEmail__Password: "${SMTP_EMAIL_PASSWORD:-}"
+      SmtpEmail__FromAddress: "${SMTP_EMAIL_FROM_ADDRESS:?Set SMTP_EMAIL_FROM_ADDRESS in .env.demo}"
+      SmtpEmail__FromName: "${SMTP_EMAIL_FROM_NAME:-ECommerce}"
+      SmtpEmail__TimeoutSeconds: "15"
+      PasswordResetEmail__FrontendUrl: "${PASSWORD_RESET_EMAIL_FRONTEND_URL:?Set PASSWORD_RESET_EMAIL_FRONTEND_URL in .env.demo}"
+      HttpsRedirection__Enabled: "false"
+      AllowedHosts: "${DEMO_ALLOWED_HOSTS:?Set DEMO_ALLOWED_HOSTS in .env.demo}"
+      ForwardedHeaders__KnownProxies__0: "${DEMO_DOCKER_GATEWAY:-172.30.0.1}"
+    ports:
+      - "${DEMO_API_BIND_ADDRESS:-127.0.0.1}:${DEMO_API_PORT:-8081}:8080"
+    volumes:
+      - demo_data_protection_keys:/home/app/.aspnet/DataProtection-Keys
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - demo_backend
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  demo_postgres_data:
+  demo_data_protection_keys:
+
+networks:
+  demo_backend:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${DEMO_DOCKER_SUBNET:-172.30.0.0/24}
+          gateway: ${DEMO_DOCKER_GATEWAY:-172.30.0.1}

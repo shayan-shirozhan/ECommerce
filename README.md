@@ -17,6 +17,7 @@ A multi-vendor marketplace backend built with **.NET 10**, **ASP.NET Core**, and
 - Password-reset email delivery through MailKit SMTP, with Mailpit capture in the local Docker Compose stack.
 - NUnit tests, including PostgreSQL integration tests with Testcontainers and API end-to-end tests with `WebApplicationFactory`.
 - Development-only marketplace seed data for a quick local demonstration.
+- An isolated public Demo environment with deterministic mock payments, configuration-provisioned seed accounts, TLS SMTP, and a dedicated Docker Compose deployment profile.
 
 ## Technology stack
 
@@ -124,6 +125,19 @@ docker compose down --volumes
 ```
 
 The API, PostgreSQL, and Mailpit ports bind to loopback by default. The supplied `.env.example` publishes PostgreSQL on host port `15432` (`POSTGRES_PORT=15432`), Mailpit SMTP on `1025`, and its web inbox on `8025`; the containers use their internal service ports. Change the corresponding environment variables if a port is already in use. The API container connects to PostgreSQL at `postgres:5432` and Mailpit at `mailpit:1025` over the Compose network.
+
+### Run the isolated Demo stack
+
+The public Demo profile is separate from Development: it uses its own PostgreSQL database and volumes, deterministic authenticated payment endpoints, configuration-backed seed credentials, and TLS SMTP. It never enables the Development environment or the randomized Development mock routes.
+
+```powershell
+Copy-Item .env.demo.example .env.demo
+# Edit .env.demo and replace every placeholder before continuing.
+docker compose --env-file .env.demo -f docker-compose.demo.yml config --quiet
+docker compose --env-file .env.demo -f docker-compose.demo.yml up --build -d
+```
+
+The API is available locally at `http://127.0.0.1:8081` and binds to loopback by default. A public deployment must put a TLS-terminating reverse proxy in front of it. See [Public Demo environment](docs/public-demo.md) for the required secrets, SMTP, forwarded-header trust, health checks, persistent volumes, and shutdown/reset behavior. Do not commit `.env.demo` or deploy with the example credentials.
 
 ## Run the API from the host
 
