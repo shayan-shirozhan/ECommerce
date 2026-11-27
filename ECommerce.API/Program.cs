@@ -15,8 +15,9 @@ using ECommerce.Infrastructure.Persistence.Seed;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Scalar.AspNetCore;
 using Serilog;
 
@@ -46,6 +47,15 @@ builder.Services.AddInfrastructure(
     enableDevelopmentEmailSender: isDevelopment,
     enableDemoPaymentGateway: isDemo,
     connectionStringName: isDemo ? "DemoECommerceDb" : "ECommerceDb");
+
+if (isDemo)
+{
+    builder.Services.AddOptions<DemoSeedOptions>()
+        .Bind(builder.Configuration.GetSection(DemoSeedOptions.SectionName))
+        .Validate(options => options.HasValidPasswords, DemoSeedOptions.ValidationErrorMessage)
+        .ValidateOnStart();
+}
+
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();
 if (zarinPalEnabled)
     builder.Services.AddHostedService<ZarinPalPaymentReconciliationBackgroundService>();
@@ -164,6 +174,11 @@ if (runInitialAdminBootstrap)
 // Production migrations are deployed separately. Development and the isolated Demo database are self-contained.
 using (var scope = app.Services.CreateScope())
 {
+    // Resolve and validate Demo credentials before touching the dedicated Demo database.
+    var demoSeedOptions = isDemo
+        ? scope.ServiceProvider.GetRequiredService<IOptions<DemoSeedOptions>>().Value
+        : null;
+
     var dbContext = scope.ServiceProvider.GetRequiredService<ECommerceDbContext>();
 
     if (app.Environment.IsDevelopment() || isDemo)
@@ -172,10 +187,14 @@ using (var scope = app.Services.CreateScope())
     var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole<Guid>>>();
     await DatabaseSeeder.SeedRolesAsync(roleManager);
 
-    if (app.Environment.IsDevelopment())
+    if (app.Environment.IsDevelopment() || isDemo)
     {
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        await DatabaseSeeder.SeedDevelopmentDataAsync(dbContext, userManager);
+
+        if (app.Environment.IsDevelopment())
+            await DatabaseSeeder.SeedDevelopmentDataAsync(dbContext, userManager);
+        else
+            await DatabaseSeeder.SeedDemoDataAsync(dbContext, userManager, demoSeedOptions!);
     }
 }
 

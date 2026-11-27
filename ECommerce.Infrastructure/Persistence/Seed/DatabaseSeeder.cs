@@ -17,14 +17,48 @@ public static class DatabaseSeeder
         await EnsureRoleAsync(roleManager, ApplicationRoles.Customer);
     }
 
-    public static async Task SeedDevelopmentDataAsync(
+    public static Task SeedDevelopmentDataAsync(
         ECommerceDbContext dbContext,
         UserManager<ApplicationUser> userManager,
         CancellationToken cancellationToken = default)
-    {
-        var users = await SeedUsersAsync(userManager);
-        await SeedCatalogDataAsync(dbContext, users, cancellationToken);
+        => SeedDataAsync(
+            dbContext,
+            userManager,
+            new SeedUserPasswords(
+                Admin: "Password123!",
+                FirstSeller: "Password123!",
+                SecondSeller: "Password123!",
+                Customer: "Password123!"),
+            cancellationToken);
 
+    public static async Task SeedDemoDataAsync(
+        ECommerceDbContext dbContext,
+        UserManager<ApplicationUser> userManager,
+        DemoSeedOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        options.Validate();
+
+        await SeedDataAsync(
+            dbContext,
+            userManager,
+            new SeedUserPasswords(
+                options.AdminPassword,
+                options.SellerPassword,
+                options.SecondSellerPassword,
+                options.CustomerPassword),
+            cancellationToken);
+    }
+
+    private static async Task SeedDataAsync(
+        ECommerceDbContext dbContext,
+        UserManager<ApplicationUser> userManager,
+        SeedUserPasswords passwords,
+        CancellationToken cancellationToken)
+    {
+        var users = await SeedUsersAsync(userManager, passwords);
+        await SeedCatalogDataAsync(dbContext, users, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -44,54 +78,58 @@ public static class DatabaseSeeder
         }
     }
 
-    private static async Task<DevelopmentUsers> SeedUsersAsync(
-        UserManager<ApplicationUser> userManager)
+    private static async Task<SeededUsers> SeedUsersAsync(
+        UserManager<ApplicationUser> userManager,
+        SeedUserPasswords passwords)
     {
         var admin = await EnsureUserAsync(
             userManager,
             email: "admin@test.com",
-            password: "Password123!",
+            password: passwords.Admin,
             firstName: "Demo",
             lastName: "Admin");
         await EnsureRoleAsync(userManager, admin, ApplicationRoles.Admin);
 
-        var firstSeller = await EnsureDevelopmentSellerAsync(
+        var firstSeller = await EnsureSellerAsync(
             userManager,
             email: "seller@test.com",
+            password: passwords.FirstSeller,
             firstName: "Demo",
             lastName: "Electronics");
 
-        var secondSeller = await EnsureDevelopmentSellerAsync(
+        var secondSeller = await EnsureSellerAsync(
             userManager,
             email: "seller2@test.com",
+            password: passwords.SecondSeller,
             firstName: "Demo",
             lastName: "Digital");
 
         var customer = await EnsureUserAsync(
             userManager,
             email: "customer@test.com",
-            password: "Password123!",
+            password: passwords.Customer,
             firstName: "Demo",
             lastName: "Customer");
         await EnsureRoleAsync(userManager, customer, ApplicationRoles.Customer);
 
-        return new DevelopmentUsers(
+        return new SeededUsers(
             firstSeller.Id,
             firstSeller.SellerStatus == SellerStatus.Active,
             secondSeller.Id,
             secondSeller.SellerStatus == SellerStatus.Active);
     }
 
-    private static async Task<ApplicationUser> EnsureDevelopmentSellerAsync(
+    private static async Task<ApplicationUser> EnsureSellerAsync(
         UserManager<ApplicationUser> userManager,
         string email,
+        string password,
         string firstName,
         string lastName)
     {
         var seller = await EnsureUserAsync(
             userManager,
             email: email,
-            password: "Password123!",
+            password: password,
             firstName: firstName,
             lastName: lastName);
 
@@ -109,7 +147,7 @@ public static class DatabaseSeeder
 
     private static async Task SeedCatalogDataAsync(
         ECommerceDbContext dbContext,
-        DevelopmentUsers users,
+        SeededUsers users,
         CancellationToken cancellationToken)
     {
         var apple = await EnsureBrandAsync(dbContext, "Apple", cancellationToken);
@@ -251,7 +289,7 @@ public static class DatabaseSeeder
     private static async Task SeedProductAsync(
         ECommerceDbContext dbContext,
         ProductSeed seed,
-        DevelopmentUsers users,
+        SeededUsers users,
         CancellationToken cancellationToken)
     {
         var product = await dbContext.Products.FirstOrDefaultAsync(
@@ -461,11 +499,17 @@ public static class DatabaseSeeder
         throw new InvalidOperationException($"Failed while {operation}: {errors}");
     }
 
-    private sealed record DevelopmentUsers(
+    private sealed record SeededUsers(
         Guid FirstSellerId,
         bool FirstSellerIsActive,
         Guid SecondSellerId,
         bool SecondSellerIsActive);
+
+    private sealed record SeedUserPasswords(
+        string Admin,
+        string FirstSeller,
+        string SecondSeller,
+        string Customer);
 
     private sealed record ProductSeed(
         string Name,
