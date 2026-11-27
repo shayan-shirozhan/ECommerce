@@ -2,7 +2,7 @@
 
 ## Status
 
-The isolated Demo boundary, authenticated deterministic mock payment routes, and configuration-backed Demo account/catalog seed are implemented. OpenAPI/Scalar can be enabled explicitly for Demo. Demo email delivery, periodic data reset, and the dedicated deployment Compose setup remain follow-up work.
+The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, and SMTP-backed password-reset email delivery are implemented. Periodic data reset and the dedicated deployment Compose setup remain follow-up work.
 
 ## Isolation rules
 
@@ -13,7 +13,7 @@ The isolated Demo boundary, authenticated deterministic mock payment routes, and
 - Startup rejects a Demo connection string that resolves to the same PostgreSQL host, port, and database name as the normal application connection string, even when credentials differ. The deployment must also ensure that different hostnames or proxies do not point to the same underlying database resource; that physical infrastructure aliasing cannot be proven from a connection string alone.
 - ZarinPal must remain disabled in Demo. Demo registers only its deterministic mock gateway.
 - Development retains its existing randomized mock gateway and Development email sender.
-- Demo does not register Development-only services, expose Development OpenAPI/Scalar endpoints, or enable Development email logging.
+- Demo does not register Development-only services, expose Development OpenAPI/Scalar endpoints by default, or enable Development email logging. Password-reset delivery uses the configured SMTP sender and requires TLS.
 - Demo automatically applies EF Core migrations to its dedicated Demo database. Production migrations remain a separate deployment step.
 - Demo seed credentials are validated before the application applies migrations or seeds the Demo database.
 
@@ -26,6 +26,15 @@ ASPNETCORE_ENVIRONMENT=Demo
 DemoPayments__Enabled=true
 ConnectionStrings__DemoECommerceDb=Host=<demo-db-host>;Database=ecommerce_demo;Username=<user>;Password=<secret>
 ZarinPal__Enabled=false
+SmtpEmail__Enabled=true
+SmtpEmail__Host=<smtp-host>
+SmtpEmail__Port=587
+SmtpEmail__Security=StartTls
+SmtpEmail__FromAddress=<verified-sender-address>
+SmtpEmail__FromName=ECommerce
+SmtpEmail__Username=<smtp-username>
+SmtpEmail__Password=<smtp-password>
+PasswordResetEmail__FrontendUrl=https://<frontend-host>/reset-password
 DemoSeed__AdminPassword=<unique-admin-password>
 DemoSeed__SellerPassword=<unique-seller-password>
 DemoSeed__SecondSellerPassword=<unique-second-seller-password>
@@ -47,6 +56,14 @@ DemoApiDocumentation__Enabled=true
 When enabled, the endpoints are available at `/openapi/v1.json` and `/scalar/v1` on the API host. The setting is accepted only when `ASPNETCORE_ENVIRONMENT=Demo`; enabling it in Development, Production, or another environment stops startup. This setting exposes API metadata and the interactive client only. It does not bypass authentication or authorization on API operations.
 
 Do not enable Development mode on a public deployment.
+
+## Password-reset email delivery
+
+Demo startup requires `SmtpEmail__Enabled=true` and a valid SMTP configuration. Use a mail provider or relay intended for the Demo deployment; do not expose Mailpit publicly. `SmtpEmail__Security` must be `StartTls` or `SslOnConnect` outside Development. Plaintext SMTP (`None`) is accepted only in Development; reserve it for local Mailpit and never use it with an external relay. The reset-page URL must use HTTPS in Demo and Production.
+
+The SMTP configuration requires a host, port, valid `FromAddress`, and sender name. `TimeoutSeconds` defaults to 15 and must be between 1 and 60. SMTP authentication is optional, but `Username` and `Password` must either both be supplied or both be omitted. Store credentials in deployment secrets/environment variables, never in the repository. `PasswordResetEmail__FrontendUrl` must be an absolute HTTPS reset-page URL without user information, a query, or a fragment. HTTP is accepted only in Development.
+
+`POST /api/auth/forgot-password` keeps the same generic response for known and unknown accounts. For an existing account, the API sends the single-use reset link through SMTP; the link lifetime is controlled by `PasswordResetEmail__TokenLifespanMinutes`. Reset tokens and email bodies are never written to logs by the SMTP sender. If SMTP is unavailable, delivery fails and the API preserves the generic response while recording the delivery failure without exposing the token. Identity reset tokens depend on the ASP.NET Core Data Protection key ring; durable key persistence and sharing across replicas remain part of the upcoming Data Protection hardening work. Until that is completed, redeployments or instance changes may invalidate outstanding reset links.
 
 ## Seeded accounts and catalog
 

@@ -28,7 +28,8 @@ public static class DependencyInjection
         bool enableMockPaymentGateway = false,
         bool enableDevelopmentEmailSender = false,
         bool enableDemoPaymentGateway = false,
-        string connectionStringName = "ECommerceDb")
+        string connectionStringName = "ECommerceDb",
+        bool requireSmtpEmailSender = false)
     {
         var demoPaymentsEnabled = configuration.GetValue<bool>("DemoPayments:Enabled");
         if (demoPaymentsEnabled != enableDemoPaymentGateway)
@@ -56,6 +57,30 @@ public static class DependencyInjection
                 throw new InvalidOperationException(
                     "ZarinPal cannot be enabled together with the Demo payment gateway.");
             }
+        }
+
+        var smtpEmailOptions = configuration
+            .GetSection(SmtpEmailOptions.SectionName)
+            .Get<SmtpEmailOptions>() ?? new SmtpEmailOptions();
+        if (requireSmtpEmailSender && !smtpEmailOptions.Enabled)
+        {
+            throw new InvalidOperationException(
+                $"{SmtpEmailOptions.SectionName}:Enabled must be true when SMTP email delivery is required.");
+        }
+
+        if (smtpEmailOptions.Enabled &&
+            !smtpEmailOptions.HasValidConfiguration(allowInsecureTransport: enableDevelopmentEmailSender))
+        {
+            throw new InvalidOperationException(
+                "SmtpEmail configuration is invalid. SMTP requires a host, valid port and sender address, a timeout from 1 to 60 seconds, matching optional credentials, and TLS outside Development.");
+        }
+
+        var resetFrontendUrl = configuration[$"{PasswordResetEmailOptions.SectionName}:{nameof(PasswordResetEmailOptions.FrontendUrl)}"];
+        if ((enableDevelopmentEmailSender || smtpEmailOptions.Enabled) &&
+            !IsValidPasswordResetFrontendUrl(resetFrontendUrl, allowHttp: enableDevelopmentEmailSender))
+        {
+            throw new InvalidOperationException(
+                "PasswordResetEmail:FrontendUrl must be an absolute HTTPS URL outside Development (HTTP is allowed only in Development), without user information, a query, or a fragment.");
         }
 
         var connectionString = configuration.GetConnectionString(connectionStringName);
@@ -94,20 +119,35 @@ public static class DependencyInjection
         var passwordResetEmailOptions = services.AddOptions<PasswordResetEmailOptions>()
             .Bind(configuration.GetSection(PasswordResetEmailOptions.SectionName));
 
-        if (enableDevelopmentEmailSender)
+        if (enableDevelopmentEmailSender || smtpEmailOptions.Enabled)
         {
             passwordResetEmailOptions
-                .Validate(options => Uri.TryCreate(options.FrontendUrl, UriKind.Absolute, out var uri) &&
-                                     (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps) &&
-                                     string.IsNullOrEmpty(uri.Query) && string.IsNullOrEmpty(uri.Fragment),
-                    "PasswordResetEmail:FrontendUrl must be an absolute HTTP or HTTPS URL without a query or fragment.")
+                .Validate(
+                    options => IsValidPasswordResetFrontendUrl(
+                        options.FrontendUrl,
+                        allowHttp: enableDevelopmentEmailSender),
+                    "PasswordResetEmail:FrontendUrl must be an absolute HTTPS URL outside Development (HTTP is allowed only in Development), without user information, a query, or a fragment.")
+                .ValidateOnStart();
+        }
+
+        if (smtpEmailOptions.Enabled)
+        {
+            services.AddOptions<SmtpEmailOptions>()
+                .Bind(configuration.GetSection(SmtpEmailOptions.SectionName))
+                .Validate(
+                    options => options.HasValidConfiguration(allowInsecureTransport: enableDevelopmentEmailSender),
+                    "SmtpEmail configuration is invalid. SMTP requires a host, valid port and sender address, a timeout from 1 to 60 seconds, matching optional credentials, and TLS outside Development.")
                 .ValidateOnStart();
 
+            services.AddScoped<IEmailSender, SmtpEmailSender>();
+        }
+        else if (enableDevelopmentEmailSender)
+        {
             services.AddScoped<IEmailSender, DevelopmentEmailSender>();
         }
         else
         {
-            // Production must register a real provider explicitly; never log reset links outside Development.
+            // Never log reset links or tokens outside Development. Demo requires SMTP explicitly.
             services.AddScoped<IEmailSender, DisabledEmailSender>();
         }
 
@@ -203,4 +243,11 @@ public static class DependencyInjection
     private static bool IsHttpsUrl(string value)
         => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
            uri.Scheme == Uri.UriSchemeHttps;
+
+    private static bool IsValidPasswordResetFrontendUrl(string? value, bool allowHttp)
+        => Uri.TryCreate(value, UriKind.Absolute, out var uri) &&
+           (uri.Scheme == Uri.UriSchemeHttps || allowHttp && uri.Scheme == Uri.UriSchemeHttp) &&
+           string.IsNullOrEmpty(uri.UserInfo) &&
+           string.IsNullOrEmpty(uri.Query) &&
+           string.IsNullOrEmpty(uri.Fragment);
 }
