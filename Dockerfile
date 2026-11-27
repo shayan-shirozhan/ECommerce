@@ -17,6 +17,9 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 ENV ASPNETCORE_HTTP_PORTS=8080
+ENV HOME=/home/app
+RUN mkdir -p "$HOME/.aspnet/DataProtection-Keys" \
+    && chown -R "$APP_UID:$APP_UID" "$HOME/.aspnet"
 EXPOSE 8080
 USER $APP_UID
 ENTRYPOINT ["dotnet", "ECommerce.API.dll"]

@@ -86,3 +86,34 @@ jobs:
 
       - name: Build Docker image
         run: docker build --pull --tag ecommerce-api:ci --file Dockerfile .
+
+      - name: Validate public Demo Docker Compose configuration
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/ecommerce-demo.env" <<'EOF'
+          DEMO_POSTGRES_USER=ecommerce_demo
+          DEMO_POSTGRES_PASSWORD=ci_demo_postgres_password_0123456789
+          DEMO_JWT_SECRET_KEY=ci_demo_jwt_secret_key_with_more_than_32_bytes
+          DEMO_SEED_ADMIN_PASSWORD=CiAdmin_123!
+          DEMO_SEED_SELLER_PASSWORD=CiSeller_234!
+          DEMO_SEED_SECOND_SELLER_PASSWORD=CiSecond_345!
+          DEMO_SEED_CUSTOMER_PASSWORD=CiCustomer_456!
+          DEMO_ALLOWED_HOSTS=localhost;127.0.0.1
+          DEMO_API_BIND_ADDRESS=127.0.0.1
+          DEMO_API_PORT=18081
+          DEMO_DOCKER_SUBNET=172.30.0.0/24
+          DEMO_DOCKER_GATEWAY=172.30.0.1
+          DEMO_API_DOCUMENTATION_ENABLED=false
+          SMTP_EMAIL_HOST=smtp.example.com
+          SMTP_EMAIL_PORT=587
+          SMTP_EMAIL_SECURITY=StartTls
+          SMTP_EMAIL_USERNAME=
+          SMTP_EMAIL_PASSWORD=
+          SMTP_EMAIL_FROM_ADDRESS=no-reply@example.com
+          SMTP_EMAIL_FROM_NAME=ECommerce
+          PASSWORD_RESET_EMAIL_FRONTEND_URL=https://demo.example.com/reset-password
+          EOF
+          docker compose \
+            --env-file "$RUNNER_TEMP/ecommerce-demo.env" \
+            --file docker-compose.demo.yml \
+            config --quiet

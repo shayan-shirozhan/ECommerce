@@ -2,7 +2,7 @@
 
 ## Status
 
-The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, and SMTP-backed password-reset email delivery are implemented. Periodic data reset and the dedicated deployment Compose setup remain follow-up work.
+The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, and SMTP-backed password-reset email delivery are implemented. A dedicated Docker Compose deployment profile now provisions an isolated PostgreSQL database, persistent database and Data Protection volumes, TLS SMTP configuration, and a loopback-bound API behind a trusted host reverse proxy. Periodic Demo data reset remains follow-up work.
 
 ## Isolation rules
 
@@ -16,6 +16,44 @@ The isolated Demo boundary, authenticated deterministic mock payment routes, con
 - Demo does not register Development-only services, expose Development OpenAPI/Scalar endpoints by default, or enable Development email logging. Password-reset delivery uses the configured SMTP sender and requires TLS.
 - Demo automatically applies EF Core migrations to its dedicated Demo database. Production migrations remain a separate deployment step.
 - Demo seed credentials are validated before the application applies migrations or seeds the Demo database.
+- `docker-compose.demo.yml` uses a dedicated bridge network and named PostgreSQL/Data Protection volumes. It does not publish the database port.
+- The Compose API port binds to `127.0.0.1` by default. A host-level reverse proxy must terminate HTTPS and forward the original `Host`, `X-Forwarded-For`, and `X-Forwarded-Proto` headers. The configured Docker bridge gateway is the only trusted proxy by default.
+
+## Docker Compose deployment
+
+The repository includes a separate deployment profile. It does not reuse the Development Compose stack or its Mailpit configuration.
+
+1. Copy the template and edit every placeholder:
+
+   PowerShell:
+   ```powershell
+   Copy-Item .env.demo.example .env.demo
+   notepad .env.demo
+   ```
+
+   Bash:
+   ```bash
+   cp .env.demo.example .env.demo
+   chmod 600 .env.demo
+   ```
+
+2. Set unique PostgreSQL and JWT secrets, four distinct Demo seed passwords, the public API host name(s), an HTTPS password-reset page URL, and an external SMTP provider with STARTTLS or implicit TLS. Keep the SMTP username and password both empty when the provider does not require authentication. For the PostgreSQL password, use a random hexadecimal/alphanumeric value so it can safely appear in the Npgsql connection string.
+
+3. Validate and start the isolated stack:
+
+   ```bash
+   docker compose --env-file .env.demo -f docker-compose.demo.yml config --quiet
+   docker compose --env-file .env.demo -f docker-compose.demo.yml up --build -d
+   docker compose --env-file .env.demo -f docker-compose.demo.yml logs -f api
+   ```
+
+4. For a local smoke test, use `http://127.0.0.1:8081/health/live` and `http://127.0.0.1:8081/health/ready`. Set `DEMO_API_DOCUMENTATION_ENABLED=true` only when the interactive reference is wanted; then Scalar is available at `http://127.0.0.1:8081/scalar/v1`.
+
+The API is intentionally bound to loopback by default. On a public host, configure a host-level reverse proxy to `127.0.0.1:8081`, terminate TLS there, preserve the `Host` header, and set `X-Forwarded-For` and `X-Forwarded-Proto`. The default Docker subnet is `172.30.0.0/24` with gateway `172.30.0.1`; the gateway is trusted for forwarded headers. Change both values together if that subnet conflicts with an existing network, and keep `DEMO_DOCKER_GATEWAY` aligned with the configured gateway. Do not expose the API port directly to the Internet.
+
+The Compose profile persists PostgreSQL data and the ASP.NET Core Data Protection key ring in separate named volumes. A normal `docker compose ... down` preserves both. Adding `--volumes` permanently deletes both the database and key ring, invalidating outstanding reset tokens and removing all Demo activity. Periodic cleanup of visitor-created Demo records is not implemented yet; the database currently retains that activity until an operator deliberately resets the stack.
+
+The Compose profile does not publish Mailpit. Password-reset mail is sent to the configured external SMTP provider. Verify sender-domain authentication and provider delivery limits before making forgot-password available to public visitors.
 
 ## Required environment configuration
 
@@ -25,6 +63,9 @@ Configure these values in the Demo deployment secret/environment configuration. 
 ASPNETCORE_ENVIRONMENT=Demo
 DemoPayments__Enabled=true
 ConnectionStrings__DemoECommerceDb=Host=<demo-db-host>;Database=ecommerce_demo;Username=<user>;Password=<secret>
+Jwt__SecretKey=<unique-random-secret-at-least-32-bytes>
+Jwt__Issuer=ECommerce.API
+Jwt__Audience=ECommerce.API
 ZarinPal__Enabled=false
 SmtpEmail__Enabled=true
 SmtpEmail__Host=<smtp-host>
@@ -63,7 +104,7 @@ Demo startup requires `SmtpEmail__Enabled=true` and a valid SMTP configuration. 
 
 The SMTP configuration requires a host, port, valid `FromAddress`, and sender name. `TimeoutSeconds` defaults to 15 and must be between 1 and 60. SMTP authentication is optional, but `Username` and `Password` must either both be supplied or both be omitted. Store credentials in deployment secrets/environment variables, never in the repository. `PasswordResetEmail__FrontendUrl` must be an absolute HTTPS reset-page URL without user information, a query, or a fragment. HTTP is accepted only in Development.
 
-`POST /api/auth/forgot-password` keeps the same generic response for known and unknown accounts. For an existing account, the API sends the single-use reset link through SMTP; the link lifetime is controlled by `PasswordResetEmail__TokenLifespanMinutes`. Reset tokens and email bodies are never written to logs by the SMTP sender. If SMTP is unavailable, delivery fails and the API preserves the generic response while recording the delivery failure without exposing the token. Identity reset tokens depend on the ASP.NET Core Data Protection key ring; durable key persistence and sharing across replicas remain part of the upcoming Data Protection hardening work. Until that is completed, redeployments or instance changes may invalidate outstanding reset links.
+`POST /api/auth/forgot-password` keeps the same generic response for known and unknown accounts. For an existing account, the API sends the single-use reset link through SMTP; the link lifetime is controlled by `PasswordResetEmail__TokenLifespanMinutes`. Reset tokens and email bodies are never written to logs by the SMTP sender. If SMTP is unavailable, delivery fails and the API preserves the generic response while recording the delivery failure without exposing the token. Identity reset tokens depend on the ASP.NET Core Data Protection key ring. The supplied Demo Compose profile persists the key ring in a named volume at `/home/app/.aspnet/DataProtection-Keys`. Non-Compose deployments must configure an equivalent durable shared key repository; replicas must share the same key ring. The key ring is not currently protected with a deployment certificate or external key-encryption service.
 
 ## Seeded accounts and catalog
 
