@@ -10,8 +10,14 @@ Set these values in the deployment secret store / process environment. Do not pl
 - `Jwt__Issuer` and `Jwt__Audience` – values matching the token consumers.
 - `Cors__AllowedOrigins__0` (and `__1`, etc.) – exact frontend origins, including scheme and port, without path segments.
 - `RateLimiting__Auth__PermitLimit` and `RateLimiting__Auth__WindowSeconds` – optional overrides.
+- `AllowedHosts` – explicit semicolon-separated API host names, without schemes or ports (for example `api.example.com`). The committed default permits loopback hosts only; wildcard entries are rejected in Production.
+- `DataProtection__KeysPath` – an absolute path to a durable, writable directory for ASP.NET Core Data Protection keys (for example `/home/app/.aspnet/DataProtection-Keys`).
 
 The production CORS origin list is intentionally empty by default. Configure the real frontend origin(s) before enabling browser clients. CORS is not an authentication mechanism.
+
+Production startup refuses wildcard `AllowedHosts` and refuses to start without an absolute `DataProtection:KeysPath`. Mount that directory on durable storage, grant write access only to the API service identity, and share the same directory/key ring across replicas. Do not use a container's writable layer or a per-replica local directory. The default Data Protection application name is `ECommerce.API`, so replicas using the same key ring can validate each other's protected tokens. Protect the volume and its backups as secrets; the key files are not additionally encrypted by this configuration.
+
+HSTS is enabled outside Development with a one-year max age and is emitted on HTTPS responses. The API also adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, and a restrictive `Permissions-Policy`. When TLS terminates at a reverse proxy, configure its IP under `ForwardedHeaders__KnownProxies__...`; forwarded headers are processed before HSTS and HTTPS redirection. Never trust arbitrary client-supplied forwarded headers.
 
 ## Password-reset email delivery
 
