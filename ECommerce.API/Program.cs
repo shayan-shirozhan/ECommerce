@@ -5,6 +5,7 @@ using ECommerce.API.HealthChecks;
 using ECommerce.API.Middleware;
 using ECommerce.API.Options;
 using ECommerce.API.Payments;
+using ECommerce.API.RateLimiting;
 using ECommerce.Application;
 using ECommerce.Application.Features.Payments.CompleteMockPayment;
 using ECommerce.Application.Options;
@@ -58,6 +59,14 @@ if (isDemo)
         .Bind(builder.Configuration.GetSection(DemoSeedOptions.SectionName))
         .Validate(options => options.HasValidPasswords, DemoSeedOptions.ValidationErrorMessage)
         .ValidateOnStart();
+
+    builder.Services.AddOptions<DemoResetOptions>()
+        .Bind(builder.Configuration.GetSection(DemoResetOptions.SectionName))
+        .Validate(options => options.IntervalSeconds >= DemoResetOptions.MinimumIntervalSeconds,
+            "DemoReset:IntervalSeconds must be at least 60 seconds.")
+        .ValidateOnStart();
+
+    builder.Services.AddHostedService<DemoDataResetBackgroundService>();
 }
 
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();
@@ -111,12 +120,20 @@ if (parsedTrustedProxyAddresses.Length > 0)
 
 var authPermitLimit = builder.Configuration.GetValue("RateLimiting:Auth:PermitLimit", 10);
 var authWindowSeconds = builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60);
+var writePermitLimit = builder.Configuration.GetValue("RateLimiting:Write:PermitLimit", 30);
+var writeWindowSeconds = builder.Configuration.GetValue("RateLimiting:Write:WindowSeconds", 60);
 
 if (authPermitLimit <= 0)
     throw new InvalidOperationException("RateLimiting:Auth:PermitLimit must be greater than zero.");
 
 if (authWindowSeconds <= 0)
     throw new InvalidOperationException("RateLimiting:Auth:WindowSeconds must be greater than zero.");
+
+if (writePermitLimit <= 0)
+    throw new InvalidOperationException("RateLimiting:Write:PermitLimit must be greater than zero.");
+
+if (writeWindowSeconds <= 0)
+    throw new InvalidOperationException("RateLimiting:Write:WindowSeconds must be greater than zero.");
 
 builder.Services.AddRateLimiter(options =>
 {
@@ -131,6 +148,10 @@ builder.Services.AddRateLimiter(options =>
                 QueueLimit = 0,
                 AutoReplenishment = true
             }));
+    options.GlobalLimiter = WriteRateLimitPolicy.CreateGlobalLimiter(
+        isEnabled: isDemo,
+        permitLimit: writePermitLimit,
+        window: TimeSpan.FromSeconds(writeWindowSeconds));
 });
 
 builder.Services.AddHealthChecks()

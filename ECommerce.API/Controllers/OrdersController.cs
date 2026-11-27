@@ -1,11 +1,12 @@
 using ECommerce.API.Contracts.Orders;
-using ECommerce.Application.Features.Orders.CreateOrderFromCart;
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Features.Orders.CancelMyOrder;
+using ECommerce.Application.Features.Orders.CreateOrderFromCart;
+using ECommerce.Application.Features.Orders.GetMyOrderById;
 using ECommerce.Application.Features.Orders.GetMyOrders;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using ECommerce.Application.Features.Orders.GetMyOrderById;
 
 namespace ECommerce.API.Controllers;
 
@@ -15,6 +16,7 @@ namespace ECommerce.API.Controllers;
 public sealed class OrdersController(ISender sender) : ControllerBase
 {
     [HttpPost("from-cart")]
+    [WriteRateLimited]
     [ProducesResponseType(
         typeof(CreateOrderFromCartResponse),
         StatusCodes.Status200OK)]
@@ -57,6 +59,7 @@ public sealed class OrdersController(ISender sender) : ControllerBase
     }
 
     [HttpPost("my/{orderId:guid}/cancel")]
+    [WriteRateLimited]
     [ProducesResponseType(typeof(CancelMyOrderResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

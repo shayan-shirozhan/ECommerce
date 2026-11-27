@@ -40,6 +40,9 @@ services:
       Jwt__Audience: ECommerce.API
       Jwt__ExpirationMinutes: "60"
       DemoPayments__Enabled: "true"
+      DemoReset__IntervalSeconds: "${DEMO_RESET_INTERVAL_SECONDS:-86400}"
+      RateLimiting__Write__PermitLimit: "${DEMO_WRITE_RATE_LIMIT_PER_WINDOW:-30}"
+      RateLimiting__Write__WindowSeconds: "${DEMO_WRITE_RATE_LIMIT_WINDOW_SECONDS:-60}"
       DemoApiDocumentation__Enabled: "${DEMO_API_DOCUMENTATION_ENABLED:-false}"
       DemoSeed__AdminPassword: "${DEMO_SEED_ADMIN_PASSWORD:?Set DEMO_SEED_ADMIN_PASSWORD in .env.demo}"
       DemoSeed__SellerPassword: "${DEMO_SEED_SELLER_PASSWORD:?Set DEMO_SEED_SELLER_PASSWORD in .env.demo}"

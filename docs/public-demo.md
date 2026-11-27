@@ -2,7 +2,7 @@
 
 ## Status
 
-The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, and SMTP-backed password-reset email delivery are implemented. A dedicated Docker Compose deployment profile now provisions an isolated PostgreSQL database, persistent database and Data Protection volumes, TLS SMTP configuration, and a loopback-bound API behind a trusted host reverse proxy. Periodic Demo data reset remains follow-up work.
+The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, SMTP-backed password-reset email delivery, periodic visitor-data reset, and Demo-only per-IP write rate limiting are implemented. A dedicated Docker Compose deployment profile provisions an isolated PostgreSQL database, persistent database and Data Protection volumes, TLS SMTP configuration, and a loopback-bound API behind a trusted host reverse proxy.
 
 ## Isolation rules
 
@@ -51,7 +51,7 @@ The repository includes a separate deployment profile. It does not reuse the Dev
 
 The API is intentionally bound to loopback by default. On a public host, configure a host-level reverse proxy to `127.0.0.1:8081`, terminate TLS there, preserve the `Host` header, and set `X-Forwarded-For` and `X-Forwarded-Proto`. The default Docker subnet is `172.30.0.0/24` with gateway `172.30.0.1`; the gateway is trusted for forwarded headers. Change both values together if that subnet conflicts with an existing network, and keep `DEMO_DOCKER_GATEWAY` aligned with the configured gateway. Do not expose the API port directly to the Internet.
 
-The Compose profile persists PostgreSQL data and the ASP.NET Core Data Protection key ring in separate named volumes. A normal `docker compose ... down` preserves both. Adding `--volumes` permanently deletes both the database and key ring, invalidating outstanding reset tokens and removing all Demo activity. Periodic cleanup of visitor-created Demo records is not implemented yet; the database currently retains that activity until an operator deliberately resets the stack.
+The Compose profile persists PostgreSQL data and the ASP.NET Core Data Protection key ring in separate named volumes. A normal `docker compose ... down` preserves both. Adding `--volumes` permanently deletes both the database and key ring, invalidating outstanding reset tokens and removing all Demo activity. The application also resets visitor-created activity periodically; this is independent of the Compose volume lifecycle.
 
 The Compose profile does not publish Mailpit. Password-reset mail is sent to the configured external SMTP provider. Verify sender-domain authentication and provider delivery limits before making forgot-password available to public visitors.
 
@@ -80,9 +80,18 @@ DemoSeed__AdminPassword=<unique-admin-password>
 DemoSeed__SellerPassword=<unique-seller-password>
 DemoSeed__SecondSellerPassword=<unique-second-seller-password>
 DemoSeed__CustomerPassword=<unique-customer-password>
+DemoReset__IntervalSeconds=86400
+RateLimiting__Write__PermitLimit=30
+RateLimiting__Write__WindowSeconds=60
 ```
 
 All four Demo seed passwords are required, must be different from one another, and must satisfy the configured ASP.NET Core Identity password policy: at least 8 characters, including uppercase, lowercase, digit, and non-alphanumeric characters. Startup fails with a configuration error if any value is missing, weak, or reused. Password values are not written to application logs.
+
+`DemoReset__IntervalSeconds` is optional and defaults to `86400` (24 hours). Use an integer of at least `60`; the setting is bound and validated only in the Demo environment.
+
+Demo write endpoints share one per-IP fixed-window quota across the entire write surface. `RateLimiting__Write__PermitLimit` defaults to `30` requests and `RateLimiting__Write__WindowSeconds` defaults to `60` seconds. Both values must be positive integers. The limiter returns HTTP `429 Too Many Requests` after the configured number of writes during the window. It applies to Cart mutations, order creation/cancellation, payment initiation/callback, and both Demo payment routes. Registration remains protected by the existing per-IP `auth` policy (10 requests per 60 seconds by default). The global write limiter is inactive outside the Demo environment.
+
+The limiter uses the client IP resolved by ASP.NET Core forwarded-header processing. Configure only trusted reverse proxies in `ForwardedHeaders__KnownProxies`; do not trust arbitrary client-supplied `X-Forwarded-For` headers. Rate-limit counters are held in process memory, so a multi-replica deployment has a separate quota on each replica and requires a distributed edge/API-gateway limit for a cluster-wide quota.
 
 Do not reuse the Production database or Production credentials. Keep Demo database credentials separate and grant only the permissions required by the Demo application. Keep the seeded Admin password operator-only; never publish it or provide it to public Demo visitors.
 
@@ -121,7 +130,7 @@ The password for each account comes from its matching `DemoSeed__...Password` se
 
 The catalog seed creates or ensures 5 brands, 8 categories (4 root and 4 child categories), 6 products, 12 variants, 18 HTTPS image records, and 18 active seller offers across two active sellers. Prices are sample amounts in Toman and stock values are for demonstration only.
 
-Seeding is idempotent: repeated application startup does not duplicate seeded users or catalog records. Existing inactive products, variants, offers, and suspended seller accounts are not automatically reactivated. The current seed does not delete visitor-created carts, wishlists, orders, or other Demo activity; a separate periodic reset mechanism is still pending.
+Seeding is idempotent: repeated application startup does not duplicate seeded users or catalog records. Existing inactive products, variants, offers, and suspended seller accounts are not automatically reactivated. The Demo-only reset worker runs after each configured interval (24 hours by default; set `DemoReset__IntervalSeconds` to override it). The first reset occurs after the first full interval, not immediately at startup. Each reset uses one database transaction, removes visitor accounts and their seller offers, all carts, wishlists, addresses, seller requests, orders, payments, payment-resolution audit rows, and refresh tokens, then restores the two seeded sellers’ offer stocks to 15 and 8. The four seeded accounts, catalog, offer prices, and offer activation states are retained. A reset failure is logged and retried on the next scheduled interval. The current worker is process-local, so run a single Demo API replica unless a distributed reset lock is added.
 
 ## Payment behavior
 
