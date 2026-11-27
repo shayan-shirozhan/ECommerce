@@ -58,6 +58,14 @@ if (isDemo)
         .Bind(builder.Configuration.GetSection(DemoSeedOptions.SectionName))
         .Validate(options => options.HasValidPasswords, DemoSeedOptions.ValidationErrorMessage)
         .ValidateOnStart();
+
+    builder.Services.AddOptions<DemoResetOptions>()
+        .Bind(builder.Configuration.GetSection(DemoResetOptions.SectionName))
+        .Validate(options => options.IntervalSeconds >= DemoResetOptions.MinimumIntervalSeconds,
+            "DemoReset:IntervalSeconds must be at least 60 seconds.")
+        .ValidateOnStart();
+
+    builder.Services.AddHostedService<DemoDataResetBackgroundService>();
 }
 
 builder.Services.AddHostedService<OrderExpirationBackgroundService>();

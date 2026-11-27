@@ -84,7 +84,7 @@ public static class DatabaseSeeder
     {
         var admin = await EnsureUserAsync(
             userManager,
-            email: "admin@test.com",
+            email: DemoSeedDefaults.AdminEmail,
             password: passwords.Admin,
             firstName: "Demo",
             lastName: "Admin");
@@ -92,21 +92,21 @@ public static class DatabaseSeeder
 
         var firstSeller = await EnsureSellerAsync(
             userManager,
-            email: "seller@test.com",
+            email: DemoSeedDefaults.FirstSellerEmail,
             password: passwords.FirstSeller,
             firstName: "Demo",
             lastName: "Electronics");
 
         var secondSeller = await EnsureSellerAsync(
             userManager,
-            email: "seller2@test.com",
+            email: DemoSeedDefaults.SecondSellerEmail,
             password: passwords.SecondSeller,
             firstName: "Demo",
             lastName: "Digital");
 
         var customer = await EnsureUserAsync(
             userManager,
-            email: "customer@test.com",
+            email: DemoSeedDefaults.CustomerEmail,
             password: passwords.Customer,
             firstName: "Demo",
             lastName: "Customer");
@@ -354,7 +354,7 @@ public static class DatabaseSeeder
                     users.FirstSellerId,
                     variant.Id,
                     variantSeed.FirstSellerPrice,
-                    15,
+                    DemoSeedDefaults.FirstSellerStock,
                     cancellationToken);
             }
 
@@ -366,7 +366,7 @@ public static class DatabaseSeeder
                     users.SecondSellerId,
                     variant.Id,
                     secondSellerPrice,
-                    8,
+                    DemoSeedDefaults.SecondSellerStock,
                     cancellationToken);
             }
         }
