@@ -30,6 +30,9 @@ var isDevelopment = builder.Environment.IsDevelopment();
 var isDemo = DemoPaymentEnvironment.ValidateAndIsEnabled(
     builder.Environment.EnvironmentName,
     builder.Configuration);
+var isDemoApiDocumentationEnabled = DemoApiDocumentationEnvironment.ValidateAndIsEnabled(
+    builder.Environment.EnvironmentName,
+    builder.Configuration);
 var zarinPalEnabled = builder.Configuration.GetValue<bool>("ZarinPal:Enabled");
 
 builder.Host.UseSerilog((context, services, loggerConfiguration) =>
@@ -202,7 +205,7 @@ app.UseForwardedHeaders();
 app.UseSerilogRequestLogging();
 app.UseMiddleware<ExceptionHandlingMiddleware>();
 
-if (app.Environment.IsDevelopment())
+if (app.Environment.IsDevelopment() || isDemoApiDocumentationEnabled)
 {
     app.MapOpenApi();
     app.MapScalarApiReference();
