@@ -216,20 +216,26 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
     }
 
     [Test]
-    public async Task Handle_should_reject_payment_when_order_payment_window_has_expired()
+    public async Task Handle_should_reject_payment_when_latest_payment_attempt_window_has_expired()
     {
         var userId = Guid.NewGuid();
         var seeded = await SeedPaymentAsync(userId);
 
-        // Make the order older than the configured 30-minute payment window.
+        // Both the order and its latest payment attempt are older than the configured window.
         await using (var setupContext = CreateDbContext())
         {
             var order = await setupContext.Orders
                 .SingleAsync(x => x.Id == seeded.OrderId);
+            var payment = await setupContext.Payments
+                .SingleAsync(x => x.Id == seeded.PaymentId);
+            var expiredAtUtc = DateTime.UtcNow.AddMinutes(-31);
 
             setupContext.Entry(order)
                 .Property(x => x.CreatedAt)
-                .CurrentValue = DateTime.UtcNow.AddMinutes(-31);
+                .CurrentValue = expiredAtUtc;
+            setupContext.Entry(payment)
+                .Property(x => x.CreatedAt)
+                .CurrentValue = expiredAtUtc;
 
             await setupContext.SaveChangesAsync();
         }
@@ -254,8 +260,62 @@ public sealed class CompleteMockPaymentCommandHandlerTests : PostgresTestBase
             Assert.That(
                 persistedOrder.Payments.Single().Status,
                 Is.EqualTo(PaymentStatus.Pending));
-
             Assert.That(gateway.CallCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    public async Task Handle_should_allow_latest_payment_attempt_when_order_and_previous_attempt_are_older_than_window()
+    {
+        var userId = Guid.NewGuid();
+        var seeded = await SeedPaymentAsync(userId);
+        Guid latestPaymentId;
+
+        // Simulate a failed attempt, followed by a fresh payment attempt on an old order.
+        await using (var setupContext = CreateDbContext())
+        {
+            var order = await setupContext.Orders
+                .Include(x => x.Payments)
+                .SingleAsync(x => x.Id == seeded.OrderId);
+            var previousPayment = order.Payments.Single();
+            var expiredAtUtc = DateTime.UtcNow.AddMinutes(-31);
+
+            previousPayment.MarkFailed();
+            setupContext.Entry(order)
+                .Property(x => x.CreatedAt)
+                .CurrentValue = expiredAtUtc;
+            setupContext.Entry(previousPayment)
+                .Property(x => x.CreatedAt)
+                .CurrentValue = expiredAtUtc;
+
+            latestPaymentId = order.InitiatePayment().Id;
+            await setupContext.SaveChangesAsync();
+        }
+
+        var gateway = new FixedPaymentGateway(
+            new PaymentGatewayResult(true, "txn-recent-attempt", "gateway-ref-recent-attempt"));
+        using var provider = CreateProvider(userId, gateway);
+
+        var response = await SendAsync(provider, latestPaymentId);
+
+        await using var verificationContext = CreateDbContext();
+        var persistedOrder = await verificationContext.Orders
+            .Include(x => x.Payments)
+            .SingleAsync(x => x.Id == seeded.OrderId);
+        var previousPaymentAfterCompletion = persistedOrder.Payments
+            .Single(payment => payment.Id == seeded.PaymentId);
+        var latestPaymentAfterCompletion = persistedOrder.Payments
+            .Single(payment => payment.Id == latestPaymentId);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(response.PaymentId, Is.EqualTo(latestPaymentId));
+            Assert.That(response.PaymentStatus, Is.EqualTo(PaymentStatus.Successful));
+            Assert.That(response.OrderStatus, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(persistedOrder.Status, Is.EqualTo(OrderStatus.Confirmed));
+            Assert.That(previousPaymentAfterCompletion.Status, Is.EqualTo(PaymentStatus.Failed));
+            Assert.That(latestPaymentAfterCompletion.Status, Is.EqualTo(PaymentStatus.Successful));
+            Assert.That(gateway.CallCount, Is.EqualTo(1));
         });
     }
 
