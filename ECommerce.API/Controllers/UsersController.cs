@@ -1,4 +1,5 @@
 using ECommerce.API.Contracts.Users;
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Features.Users.ChangeMyPassword;
 using ECommerce.Application.Features.Users.GetMyProfile;
 using ECommerce.Application.Features.Users.UpdateMyProfile;
@@ -26,6 +27,7 @@ public sealed class UsersController(ISender sender) : ControllerBase
     }
 
     [HttpPut("me")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

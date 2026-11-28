@@ -1,3 +1,4 @@
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Features.Addresses.CreateAddress;
 using ECommerce.Application.Features.Addresses.DeleteAddress;
 using ECommerce.Application.Features.Addresses.GetMyAddresses;
@@ -14,6 +15,7 @@ namespace ECommerce.API.Controllers;
 public sealed class AddressesController(ISender sender) : ControllerBase
 {
     [HttpPost]
+    [WriteRateLimited]
     [ProducesResponseType(typeof(CreateAddressResponse), StatusCodes.Status201Created)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -28,6 +30,7 @@ public sealed class AddressesController(ISender sender) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -54,6 +57,7 @@ public sealed class AddressesController(ISender sender) : ControllerBase
 
 
     [HttpPut("{id:guid}/default")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -71,6 +75,7 @@ public sealed class AddressesController(ISender sender) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]

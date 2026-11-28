@@ -134,6 +134,9 @@ var authPermitLimit = builder.Configuration.GetValue("RateLimiting:Auth:PermitLi
 var authWindowSeconds = builder.Configuration.GetValue("RateLimiting:Auth:WindowSeconds", 60);
 var writePermitLimit = builder.Configuration.GetValue("RateLimiting:Write:PermitLimit", 30);
 var writeWindowSeconds = builder.Configuration.GetValue("RateLimiting:Write:WindowSeconds", 60);
+var writeRateLimitingEnabled = WriteRateLimitPolicy.ResolveEnabled(
+    builder.Configuration,
+    isDemo);
 
 if (authPermitLimit <= 0)
     throw new InvalidOperationException("RateLimiting:Auth:PermitLimit must be greater than zero.");
@@ -161,7 +164,7 @@ builder.Services.AddRateLimiter(options =>
                 AutoReplenishment = true
             }));
     options.GlobalLimiter = WriteRateLimitPolicy.CreateGlobalLimiter(
-        isEnabled: isDemo,
+        isEnabled: writeRateLimitingEnabled,
         permitLimit: writePermitLimit,
         window: TimeSpan.FromSeconds(writeWindowSeconds));
 });
