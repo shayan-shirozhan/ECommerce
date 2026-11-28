@@ -2,7 +2,7 @@
 
 ## Status
 
-The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, SMTP-backed password-reset email delivery, periodic visitor-data reset, and Demo-only per-IP write rate limiting are implemented. A dedicated Docker Compose deployment profile provisions an isolated PostgreSQL database, persistent database and Data Protection volumes, TLS SMTP configuration, and a loopback-bound API behind a trusted host reverse proxy.
+The isolated Demo boundary, authenticated deterministic mock payment routes, configuration-backed Demo account/catalog seed, opt-in OpenAPI/Scalar, SMTP-backed password-reset email delivery, periodic visitor-data reset, and shared per-IP write rate limiting are implemented. A dedicated Docker Compose deployment profile provisions an isolated PostgreSQL database, persistent database and Data Protection volumes, TLS SMTP configuration, and a loopback-bound API behind a trusted host reverse proxy.
 
 ## Isolation rules
 
@@ -89,7 +89,7 @@ All four Demo seed passwords are required, must be different from one another, a
 
 `DemoReset__IntervalSeconds` is optional and defaults to `86400` (24 hours). Use an integer of at least `60`; the setting is bound and validated only in the Demo environment.
 
-Demo write endpoints share one per-IP fixed-window quota across the entire write surface. `RateLimiting__Write__PermitLimit` defaults to `30` requests and `RateLimiting__Write__WindowSeconds` defaults to `60` seconds. Both values must be positive integers. The limiter returns HTTP `429 Too Many Requests` after the configured number of writes during the window. It applies to Cart mutations, order creation/cancellation, payment initiation/callback, and both Demo payment routes. Registration remains protected by the existing per-IP `auth` policy (10 requests per 60 seconds by default). The global write limiter is inactive outside the Demo environment.
+Demo write endpoints share one per-IP fixed-window quota across all actions marked with `[WriteRateLimited]`. `RateLimiting__Write__PermitLimit` defaults to `30` requests and `RateLimiting__Write__WindowSeconds` defaults to `60` seconds. Both values must be positive integers. The limiter returns HTTP `429 Too Many Requests` after the configured number of writes during the window. It applies to Cart mutations, order creation/cancellation, payment initiation/callback, Wishlist mutations, address mutations, seller-request creation/approval/rejection, profile updates, registration, and both Demo payment routes. Registration also remains protected by the existing per-IP `auth` policy (10 requests per 60 seconds by default). The write limiter defaults to enabled in Demo and disabled outside Demo; set `RateLimiting__Write__Enabled` explicitly to override that environment-based default. In Production, set `RateLimiting__Write__Enabled=true` to opt in, and tune the same `PermitLimit` and `WindowSeconds` settings for the expected traffic.
 
 The limiter uses the client IP resolved by ASP.NET Core forwarded-header processing. Configure only trusted reverse proxies in `ForwardedHeaders__KnownProxies`; do not trust arbitrary client-supplied `X-Forwarded-For` headers. Rate-limit counters are held in process memory, so a multi-replica deployment has a separate quota on each replica and requires a distributed edge/API-gateway limit for a cluster-wide quota.
 

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ECommerce.Tests.API.RateLimiting;
@@ -14,9 +15,9 @@ namespace ECommerce.Tests.API.RateLimiting;
 public sealed class WriteRateLimitingTests
 {
     [Test]
-    public async Task Demo_write_policy_should_limit_each_ip_independently()
+    public async Task Enabled_write_policy_should_limit_each_ip_independently()
     {
-        await using var app = await CreateTestApplicationAsync(isDemo: true, permitLimit: 2);
+        await using var app = await CreateTestApplicationAsync(isEnabled: true, permitLimit: 2);
         using var client = app.GetTestClient();
 
         Assert.That(await SendWriteAsync(client, "/write/cart", "198.51.100.10"), Is.EqualTo(HttpStatusCode.OK));
@@ -32,9 +33,11 @@ public sealed class WriteRateLimitingTests
     }
 
     [Test]
-    public async Task Write_policy_should_be_disabled_outside_demo()
+    public async Task Write_policy_should_be_disabled_by_default_outside_demo()
     {
-        await using var app = await CreateTestApplicationAsync(isDemo: false, permitLimit: 1);
+        var configuration = new ConfigurationBuilder().Build();
+        var isEnabled = WriteRateLimitPolicy.ResolveEnabled(configuration, isDemo: false);
+        await using var app = await CreateTestApplicationAsync(isEnabled, permitLimit: 1);
         using var client = app.GetTestClient();
 
         var statuses = new List<HttpStatusCode>();
@@ -42,6 +45,49 @@ public sealed class WriteRateLimitingTests
             statuses.Add(await SendWriteAsync(client, "/write/cart", "198.51.100.20"));
 
         Assert.That(statuses, Is.All.EqualTo(HttpStatusCode.OK));
+    }
+
+    [Test]
+    public async Task Production_write_policy_should_be_enabled_by_configuration()
+    {
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RateLimiting:Write:Enabled"] = "true"
+            })
+            .Build();
+        var isEnabled = WriteRateLimitPolicy.ResolveEnabled(configuration, isDemo: false);
+
+        await using var app = await CreateTestApplicationAsync(isEnabled, permitLimit: 1);
+        using var client = app.GetTestClient();
+
+        Assert.That(await SendWriteAsync(client, "/write/cart", "198.51.100.30"), Is.EqualTo(HttpStatusCode.OK));
+        Assert.That(await SendWriteAsync(client, "/write/order", "198.51.100.30"),
+            Is.EqualTo(HttpStatusCode.TooManyRequests));
+    }
+
+    [Test]
+    public void Write_policy_should_default_to_demo_and_allow_explicit_overrides()
+    {
+        var defaultConfiguration = new ConfigurationBuilder().Build();
+        Assert.That(WriteRateLimitPolicy.ResolveEnabled(defaultConfiguration, isDemo: true), Is.True);
+        Assert.That(WriteRateLimitPolicy.ResolveEnabled(defaultConfiguration, isDemo: false), Is.False);
+
+        var disabledConfiguration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RateLimiting:Write:Enabled"] = "false"
+            })
+            .Build();
+        var enabledConfiguration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["RateLimiting:Write:Enabled"] = "true"
+            })
+            .Build();
+
+        Assert.That(WriteRateLimitPolicy.ResolveEnabled(disabledConfiguration, isDemo: true), Is.False);
+        Assert.That(WriteRateLimitPolicy.ResolveEnabled(enabledConfiguration, isDemo: false), Is.True);
     }
 
     [TestCase(typeof(CartController), nameof(CartController.AddItem))]
@@ -52,7 +98,17 @@ public sealed class WriteRateLimitingTests
     [TestCase(typeof(PaymentsController), nameof(PaymentsController.InitiatePayment))]
     [TestCase(typeof(PaymentsController), nameof(PaymentsController.ZarinPalCallback))]
     [TestCase(typeof(AuthController), nameof(AuthController.Register))]
-    public void Visitor_write_actions_should_use_the_write_policy(Type controllerType, string actionName)
+    [TestCase(typeof(WishlistController), nameof(WishlistController.AddItem))]
+    [TestCase(typeof(WishlistController), nameof(WishlistController.RemoveItem))]
+    [TestCase(typeof(AddressesController), nameof(AddressesController.Create))]
+    [TestCase(typeof(AddressesController), nameof(AddressesController.Update))]
+    [TestCase(typeof(AddressesController), nameof(AddressesController.SetDefault))]
+    [TestCase(typeof(AddressesController), nameof(AddressesController.Delete))]
+    [TestCase(typeof(SellerRequestsController), nameof(SellerRequestsController.Create))]
+    [TestCase(typeof(SellerRequestsController), nameof(SellerRequestsController.Approve))]
+    [TestCase(typeof(SellerRequestsController), nameof(SellerRequestsController.Reject))]
+    [TestCase(typeof(UsersController), nameof(UsersController.UpdateMyProfile))]
+    public void Configured_write_actions_should_use_the_write_policy(Type controllerType, string actionName)
     {
         var action = controllerType.GetMethod(actionName, BindingFlags.Instance | BindingFlags.Public);
         Assert.That(action, Is.Not.Null, $"Could not find {controllerType.Name}.{actionName}.");
@@ -68,7 +124,7 @@ public sealed class WriteRateLimitingTests
         Assert.That(attribute?.PolicyName, Is.EqualTo("auth"));
     }
 
-    private static async Task<WebApplication> CreateTestApplicationAsync(bool isDemo, int permitLimit)
+    private static async Task<WebApplication> CreateTestApplicationAsync(bool isEnabled, int permitLimit)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -76,7 +132,7 @@ public sealed class WriteRateLimitingTests
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.GlobalLimiter = WriteRateLimitPolicy.CreateGlobalLimiter(
-                isEnabled: isDemo,
+                isEnabled: isEnabled,
                 permitLimit: permitLimit,
                 window: TimeSpan.FromMinutes(1));
         });

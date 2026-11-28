@@ -1,10 +1,18 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 
 namespace ECommerce.API.RateLimiting;
 
 internal static class WriteRateLimitPolicy
 {
+    public static bool ResolveEnabled(IConfiguration configuration, bool isDemo)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+
+        return configuration.GetValue<bool?>("RateLimiting:Write:Enabled") ?? isDemo;
+    }
+
     public static PartitionedRateLimiter<HttpContext> CreateGlobalLimiter(
         bool isEnabled,
         int permitLimit,

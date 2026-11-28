@@ -9,7 +9,8 @@ Set these values in the deployment secret store / process environment. Do not pl
 - `Jwt__SecretKey` – cryptographically random secret with at least 32 UTF-8 bytes.
 - `Jwt__Issuer` and `Jwt__Audience` – values matching the token consumers.
 - `Cors__AllowedOrigins__0` (and `__1`, etc.) – exact frontend origins, including scheme and port, without path segments.
-- `RateLimiting__Auth__PermitLimit` and `RateLimiting__Auth__WindowSeconds` – optional overrides.
+- `RateLimiting__Auth__PermitLimit` and `RateLimiting__Auth__WindowSeconds` – optional overrides for the authentication policy.
+- `RateLimiting__Write__Enabled=true` – opt in to the shared per-IP write limiter in Production. It is disabled by default in `appsettings.Production.json`; `RateLimiting__Write__PermitLimit` (default `30`) and `RateLimiting__Write__WindowSeconds` (default `60`) control the quota. Set `Enabled=false` to disable it explicitly in another environment.
 - `AllowedHosts` – explicit semicolon-separated API host names, without schemes or ports (for example `api.example.com`). The committed default permits loopback hosts only; wildcard entries are rejected in Production.
 - `DataProtection__KeysPath` – an absolute path to a durable, writable directory for ASP.NET Core Data Protection keys (for example `/home/app/.aspnet/DataProtection-Keys`).
 
@@ -32,7 +33,7 @@ The application can send password-reset messages through the shared MailKit SMTP
 
 Keep SMTP credentials in the deployment secret store or process environment. The SMTP sender does not log reset links or email bodies. When `SmtpEmail__Enabled` is not true, the API retains `DisabledEmailSender`: password-reset requests keep their generic response, but no email is sent. The local Development Compose stack uses Mailpit; do not expose Mailpit as a production mail relay or public inbox.
 
-When the API is behind a reverse proxy or load balancer, set `ForwardedHeaders__KnownProxies__0` (and subsequent indices) to the proxy IP addresses. The API enables `X-Forwarded-For` and `X-Forwarded-Proto` only for those trusted proxies. Do not trust arbitrary `X-Forwarded-For` values; the auth rate limiter partitions by the remote IP address observed by the application.
+When the API is behind a reverse proxy or load balancer, set `ForwardedHeaders__KnownProxies__0` (and subsequent indices) to the proxy IP addresses. The API enables `X-Forwarded-For` and `X-Forwarded-Proto` only for those trusted proxies. Do not trust arbitrary `X-Forwarded-For` values; both rate-limiting policies partition by the remote IP address observed by the application. The write quota is shared across the actions marked with `[WriteRateLimited]`; it includes Cart/order/payment operations, Wishlist and address mutations, seller-request mutations, profile updates, and registration. Counters are in process memory, so use an edge/API-gateway limit as well when a deployment has multiple replicas.
 
 ## Deploy database migrations
 

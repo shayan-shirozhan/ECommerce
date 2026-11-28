@@ -1,3 +1,4 @@
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Abstractions.Identity;
 using ECommerce.Application.Features.Sellers.SellerRequests.ApproveSellerRequest;
 using ECommerce.Application.Features.Sellers.SellerRequests.CreateSellerRequest;
@@ -46,6 +47,7 @@ public class SellerRequestsController(ISender sender) : ControllerBase
 
     [Authorize]
     [HttpPost]
+    [WriteRateLimited]
     public async Task<ActionResult> Create(CreateSellerRequestCommand command, CancellationToken cancellationToken)
     {
         var sellerRequestId = await sender.Send(command, cancellationToken);
@@ -54,6 +56,7 @@ public class SellerRequestsController(ISender sender) : ControllerBase
 
     [Authorize(Roles = ApplicationRoles.Admin)]
     [HttpPost("{id:guid}/approve")]
+    [WriteRateLimited]
     public async Task<IActionResult> Approve(Guid id, CancellationToken cancellationToken)
     {
         await sender.Send(new ApproveSellerRequestCommand(id), cancellationToken);
@@ -62,6 +65,7 @@ public class SellerRequestsController(ISender sender) : ControllerBase
 
     [Authorize(Roles = ApplicationRoles.Admin)]
     [HttpPost("{id:guid}/reject")]
+    [WriteRateLimited]
     public async Task<IActionResult> Reject(Guid id, CancellationToken cancellationToken)
     {
         await sender.Send(new RejectSellerRequestCommand(id), cancellationToken);

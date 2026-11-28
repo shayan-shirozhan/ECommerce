@@ -1,3 +1,4 @@
+using ECommerce.API.RateLimiting;
 using ECommerce.Application.Features.Wishlist.AddWishlistItem;
 using ECommerce.Application.Features.Wishlist.GetMyWishlist;
 using ECommerce.Application.Features.Wishlist.RemoveWishlistItem;
@@ -26,6 +27,7 @@ public sealed class WishlistController(ISender sender) : ControllerBase
     }
 
     [HttpPost("items")]
+    [WriteRateLimited]
     [ProducesResponseType(typeof(AddWishlistItemResponse), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
@@ -40,6 +42,7 @@ public sealed class WishlistController(ISender sender) : ControllerBase
     }
 
     [HttpDelete("items/{productId:guid}")]
+    [WriteRateLimited]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
