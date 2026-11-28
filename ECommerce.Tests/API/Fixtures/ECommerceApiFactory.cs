@@ -1,8 +1,9 @@
-using ECommerce.API.BackgroundServices;
-using ECommerce.Application.Abstractions.Payments;
-using ECommerce.Infrastructure.Identity;
 using System.Text;
 using System.Threading.RateLimiting;
+using ECommerce.API.BackgroundServices;
+using ECommerce.Application.Abstractions.Email;
+using ECommerce.Application.Abstractions.Payments;
+using ECommerce.Infrastructure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.AspNetCore.Hosting;
@@ -24,7 +25,8 @@ namespace ECommerce.Tests.API.Fixtures;
 /// </summary>
 public sealed class ECommerceApiFactory(
     string connectionString,
-    IPaymentGateway paymentGateway) : WebApplicationFactory<Program>
+    IPaymentGateway paymentGateway,
+    IEmailSender emailSender) : WebApplicationFactory<Program>
 {
     internal const string TestJwtSigningKey = "ECommerce.Api.Integration.Tests.Signing.Key.2026!";
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -65,6 +67,10 @@ public sealed class ECommerceApiFactory(
                 JwtBearerDefaults.AuthenticationScheme,
                 options => options.TokenValidationParameters.IssuerSigningKey =
                     new SymmetricSecurityKey(Encoding.UTF8.GetBytes(TestJwtSigningKey)));
+
+            // Capture password-reset messages without sending email outside the test process.
+            services.RemoveAll<IEmailSender>();
+            services.AddSingleton<IEmailSender>(emailSender);
 
             // Keep the real auth rate-limiting middleware and endpoint policy in the test host,
             // but replace the production-sized threshold with a deterministic test-only limit.

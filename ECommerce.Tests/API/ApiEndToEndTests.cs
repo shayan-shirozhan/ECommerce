@@ -3,17 +3,24 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using ECommerce.API.BackgroundServices;
+using ECommerce.Application.Abstractions.Email;
 using ECommerce.Application.Abstractions.Payments;
+using ECommerce.Application.Features.Addresses.CreateAddress;
+using ECommerce.Application.Features.Addresses.GetMyAddresses;
+using ECommerce.Application.Features.Authentication.ForgotPassword;
 using ECommerce.Application.Features.Orders.CreateOrderFromCart;
 using ECommerce.Application.Features.Orders.GetMyOrderById;
 using ECommerce.Application.Features.Payments.InitiatePayment;
 using ECommerce.Application.Features.Payments.ResolveAdminPayment;
+using ECommerce.Application.Features.Users.GetMyProfile;
+using ECommerce.Application.Features.Wishlist.GetMyWishlist;
 using ECommerce.Domain.Entities;
 using ECommerce.Domain.Enums;
 using ECommerce.Infrastructure.Persistence;
 using ECommerce.Tests.API.Fixtures;
 using ECommerce.Tests.Infrastructure.Fixtures;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -35,6 +42,8 @@ public sealed class ApiEndToEndTests : PostgresTestBase
     private ECommerceApiFactory _factory = null!;
     private HttpClient _client = null!;
     private FakeZarinPalPaymentGateway _paymentGateway = null!;
+    private CapturingEmailSender _emailSender = null!;
+    private Guid _productId;
     private Guid _productVariantId;
     private Guid _seededSellerOfferId;
     private string _adminAccessToken = null!;
@@ -48,7 +57,8 @@ public sealed class ApiEndToEndTests : PostgresTestBase
         ConfigureBootstrapEnvironment();
 
         _paymentGateway = new FakeZarinPalPaymentGateway();
-        _factory = new ECommerceApiFactory(ConnectionString, _paymentGateway);
+        _emailSender = new CapturingEmailSender();
+        _factory = new ECommerceApiFactory(ConnectionString, _paymentGateway, _emailSender);
         _client = _factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             AllowAutoRedirect = false,
@@ -93,9 +103,9 @@ public sealed class ApiEndToEndTests : PostgresTestBase
 
         Assert.That(productResponse.StatusCode, Is.EqualTo(HttpStatusCode.Created),
             await productResponse.Content.ReadAsStringAsync());
-        var productId = await ReadIdAsync(productResponse);
+        _productId = await ReadIdAsync(productResponse);
 
-        using (var activateProduct = CreateRequest(HttpMethod.Put, $"/api/products/{productId}/activate", _adminAccessToken))
+        using (var activateProduct = CreateRequest(HttpMethod.Put, $"/api/products/{_productId}/activate", _adminAccessToken))
         using (var activateResponse = await _client.SendAsync(activateProduct))
             Assert.That(activateResponse.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
 
@@ -105,7 +115,7 @@ public sealed class ApiEndToEndTests : PostgresTestBase
             _adminAccessToken,
             new
             {
-                productId,
+                productId = _productId,
                 sku = $"E2E-{Guid.NewGuid():N}",
                 name = "Default variant"
             });
@@ -130,6 +140,7 @@ public sealed class ApiEndToEndTests : PostgresTestBase
     public void ResetPaymentGateway()
     {
         _paymentGateway.Reset();
+        _emailSender.Clear();
     }
 
     [Test]
@@ -140,6 +151,371 @@ public sealed class ApiEndToEndTests : PostgresTestBase
             content: null);
 
         Assert.That(response.StatusCode, Is.EqualTo(HttpStatusCode.NotFound));
+    }
+
+    [Test]
+    public async Task Forgot_password_should_send_a_single_use_reset_link_and_revoke_existing_sessions()
+    {
+        var customer = await RegisterAndLoginAsync("password-reset");
+        var secondSession = await LoginAsync(customer.Email, CustomerPassword);
+        var unknownEmail = NewEmail("unknown-reset");
+
+        using var unknownAccountResponse = await SendJsonAsync(
+            HttpMethod.Post,
+            "/api/auth/forgot-password",
+            accessToken: null,
+            body: new { email = unknownEmail });
+
+        Assert.That(unknownAccountResponse.StatusCode, Is.EqualTo(HttpStatusCode.Accepted));
+        var unknownAccountResult = await unknownAccountResponse.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+        Assert.That(unknownAccountResult, Is.Not.Null);
+        Assert.That(_emailSender.Messages, Is.Empty);
+
+        using var forgotPasswordResponse = await SendJsonAsync(
+            HttpMethod.Post,
+            "/api/auth/forgot-password",
+            accessToken: null,
+            body: new { email = customer.Email });
+
+        Assert.That(
+            forgotPasswordResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.Accepted),
+            await forgotPasswordResponse.Content.ReadAsStringAsync());
+
+        var forgotPasswordResult = await forgotPasswordResponse.Content.ReadFromJsonAsync<ForgotPasswordResponse>();
+        Assert.That(forgotPasswordResult, Is.Not.Null);
+        Assert.That(forgotPasswordResult!.Message, Is.EqualTo(unknownAccountResult!.Message));
+
+        var email = _emailSender.Messages.Single();
+        Assert.That(email.To, Is.EqualTo(customer.Email));
+        Assert.That(email.Subject, Is.EqualTo("Reset your ECommerce password"));
+
+        var resetLink = email.Body
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)
+            .Last();
+        var resetQuery = QueryHelpers.ParseQuery(new Uri(resetLink).Query);
+        var resetToken = resetQuery["token"].ToString();
+        Assert.That(resetToken, Is.Not.Empty);
+        Assert.That(resetQuery["email"].ToString(), Is.EqualTo(customer.Email));
+
+        const string newPassword = "NewP@ssword456!";
+        using var resetPasswordResponse = await SendJsonAsync(
+            HttpMethod.Post,
+            "/api/auth/reset-password",
+            accessToken: null,
+            body: new
+            {
+                email = customer.Email,
+                token = resetToken,
+                newPassword
+            });
+
+        Assert.That(
+            resetPasswordResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.NoContent),
+            await resetPasswordResponse.Content.ReadAsStringAsync());
+
+        using var reusedResetTokenResponse = await SendJsonAsync(
+            HttpMethod.Post,
+            "/api/auth/reset-password",
+            accessToken: null,
+            body: new
+            {
+                email = customer.Email,
+                token = resetToken,
+                newPassword = "AnotherP@ssword987!"
+            });
+        Assert.That(reusedResetTokenResponse.StatusCode, Is.EqualTo(HttpStatusCode.BadRequest));
+
+        using var oldRefreshCookieResponse = await SendCookiePostAsync(
+            "/api/auth/refresh",
+            customer.RefreshCookie);
+        Assert.That(oldRefreshCookieResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        using var secondOldRefreshCookieResponse = await SendCookiePostAsync(
+            "/api/auth/refresh",
+            secondSession.RefreshCookie);
+        Assert.That(secondOldRefreshCookieResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        using var oldPasswordLoginRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new { email = customer.Email, password = CustomerPassword })
+        };
+        oldPasswordLoginRequest.Headers.TryAddWithoutValidation("Origin", TestOrigin);
+        using var oldPasswordLoginResponse = await _client.SendAsync(oldPasswordLoginRequest);
+        Assert.That(oldPasswordLoginResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        var newSession = await LoginAsync(customer.Email, newPassword);
+        Assert.That(newSession.AccessToken, Is.Not.Empty);
+    }
+
+    [Test]
+    public async Task Change_password_should_update_credentials_and_revoke_all_refresh_sessions()
+    {
+        var customer = await RegisterAndLoginAsync("change-password");
+        var secondSession = await LoginAsync(customer.Email, CustomerPassword);
+        const string newPassword = "ChangedP@ssword789!";
+
+        using var changePasswordResponse = await SendJsonAsync(
+            HttpMethod.Put,
+            "/api/users/me/password",
+            customer.AccessToken,
+            new
+            {
+                currentPassword = CustomerPassword,
+                newPassword
+            });
+
+        Assert.That(
+            changePasswordResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.NoContent),
+            await changePasswordResponse.Content.ReadAsStringAsync());
+
+        using var oldRefreshCookieResponse = await SendCookiePostAsync(
+            "/api/auth/refresh",
+            customer.RefreshCookie);
+        Assert.That(oldRefreshCookieResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        using var secondOldRefreshCookieResponse = await SendCookiePostAsync(
+            "/api/auth/refresh",
+            secondSession.RefreshCookie);
+        Assert.That(secondOldRefreshCookieResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        using var oldPasswordLoginRequest = new HttpRequestMessage(HttpMethod.Post, "/api/auth/login")
+        {
+            Content = JsonContent.Create(new { email = customer.Email, password = CustomerPassword })
+        };
+        oldPasswordLoginRequest.Headers.TryAddWithoutValidation("Origin", TestOrigin);
+        using var oldPasswordLoginResponse = await _client.SendAsync(oldPasswordLoginRequest);
+        Assert.That(oldPasswordLoginResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        var newSession = await LoginAsync(customer.Email, newPassword);
+        Assert.That(newSession.AccessToken, Is.Not.Empty);
+    }
+
+    [Test]
+    public async Task Users_me_should_require_authentication_and_return_the_updated_profile()
+    {
+        var customer = await RegisterAndLoginAsync("profile");
+
+        using var anonymousRequest = CreateRequest(HttpMethod.Get, "/api/users/me", accessToken: null);
+        using var anonymousResponse = await _client.SendAsync(anonymousRequest);
+        Assert.That(anonymousResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
+
+        using var profileRequest = CreateRequest(HttpMethod.Get, "/api/users/me", customer.AccessToken);
+        using var profileResponse = await _client.SendAsync(profileRequest);
+        Assert.That(profileResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var profile = await profileResponse.Content.ReadFromJsonAsync<GetMyProfileResponse>()
+                      ?? throw new AssertionException("The profile endpoint returned an empty response.");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(profile.Email, Is.EqualTo(customer.Email));
+            Assert.That(profile.FirstName, Is.EqualTo("API"));
+            Assert.That(profile.LastName, Is.EqualTo("Test"));
+        });
+
+        using var updateResponse = await SendJsonAsync(
+            HttpMethod.Put,
+            "/api/users/me",
+            customer.AccessToken,
+            new { firstName = "Updated", lastName = "Customer" });
+        Assert.That(
+            updateResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.NoContent),
+            await updateResponse.Content.ReadAsStringAsync());
+
+        using var updatedProfileRequest = CreateRequest(HttpMethod.Get, "/api/users/me", customer.AccessToken);
+        using var updatedProfileResponse = await _client.SendAsync(updatedProfileRequest);
+        Assert.That(updatedProfileResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var updatedProfile = await updatedProfileResponse.Content.ReadFromJsonAsync<GetMyProfileResponse>()
+                             ?? throw new AssertionException("The updated profile endpoint returned an empty response.");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(updatedProfile.FirstName, Is.EqualTo("Updated"));
+            Assert.That(updatedProfile.LastName, Is.EqualTo("Customer"));
+            Assert.That(updatedProfile.Email, Is.EqualTo(customer.Email));
+        });
+    }
+
+    [Test]
+    public async Task Wishlist_and_addresses_should_support_the_complete_authenticated_crud_flow()
+    {
+        var customer = await RegisterAndLoginAsync("wishlist-addresses");
+
+        using (var addWishlistItem = await SendJsonAsync(
+                   HttpMethod.Post,
+                   "/api/wishlist/items",
+                   customer.AccessToken,
+                   new { productId = _productId }))
+        {
+            Assert.That(
+                addWishlistItem.StatusCode,
+                Is.EqualTo(HttpStatusCode.OK),
+                await addWishlistItem.Content.ReadAsStringAsync());
+        }
+
+        using (var wishlistRequest = CreateRequest(HttpMethod.Get, "/api/wishlist", customer.AccessToken))
+        using (var wishlistResponse = await _client.SendAsync(wishlistRequest))
+        {
+            Assert.That(wishlistResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            var wishlist = await wishlistResponse.Content.ReadFromJsonAsync<GetMyWishlistResponse>();
+            Assert.That(wishlist, Is.Not.Null);
+            Assert.That(wishlist!.Items, Has.Count.EqualTo(1));
+            Assert.That(wishlist.Items.Single().ProductId, Is.EqualTo(_productId));
+        }
+
+        using (var removeWishlistRequest = CreateRequest(
+                   HttpMethod.Delete,
+                   $"/api/wishlist/items/{_productId:D}",
+                   customer.AccessToken))
+        using (var removeWishlistItem = await _client.SendAsync(removeWishlistRequest))
+        {
+            Assert.That(removeWishlistItem.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+        }
+
+        using (var emptyWishlistRequest = CreateRequest(HttpMethod.Get, "/api/wishlist", customer.AccessToken))
+        using (var emptyWishlistResponse = await _client.SendAsync(emptyWishlistRequest))
+        {
+            Assert.That(emptyWishlistResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            var wishlist = await emptyWishlistResponse.Content.ReadFromJsonAsync<GetMyWishlistResponse>();
+            Assert.That(wishlist!.Items, Is.Empty);
+        }
+
+        using var firstAddressResponse = await SendJsonAsync(
+            HttpMethod.Post,
+            "/api/addresses",
+            customer.AccessToken,
+            new
+            {
+                title = "Home",
+                recipientName = "API Test Customer",
+                phoneNumber = "09120000000",
+                province = "Tehran",
+                city = "Tehran",
+                postalCode = "1234567890",
+                addressLine = "First integration address",
+                isDefault = true
+            });
+
+        Assert.That(
+            firstAddressResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.Created),
+            await firstAddressResponse.Content.ReadAsStringAsync());
+        var firstAddress = await firstAddressResponse.Content.ReadFromJsonAsync<CreateAddressResponse>()
+                           ?? throw new AssertionException("The first address endpoint returned an empty response.");
+        Assert.That(firstAddress.IsDefault, Is.True);
+
+        using var secondAddressResponse = await SendJsonAsync(
+            HttpMethod.Post,
+            "/api/addresses",
+            customer.AccessToken,
+            new
+            {
+                title = "Office",
+                recipientName = "API Test Customer",
+                phoneNumber = "09120000000",
+                province = "Tehran",
+                city = "Tehran",
+                postalCode = "1234567890",
+                addressLine = "Second integration address",
+                isDefault = false
+            });
+
+        Assert.That(
+            secondAddressResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.Created),
+            await secondAddressResponse.Content.ReadAsStringAsync());
+        var secondAddress = await secondAddressResponse.Content.ReadFromJsonAsync<CreateAddressResponse>()
+                            ?? throw new AssertionException("The second address endpoint returned an empty response.");
+        Assert.That(secondAddress.IsDefault, Is.False);
+
+        using var updateAddressResponse = await SendJsonAsync(
+            HttpMethod.Put,
+            $"/api/addresses/{secondAddress.Id:D}",
+            customer.AccessToken,
+            new
+            {
+                title = "Updated office",
+                recipientName = "Updated API Customer",
+                phoneNumber = "09121111111",
+                province = "Tehran",
+                city = "Tehran",
+                postalCode = "1234567891",
+                addressLine = "Updated second integration address"
+            });
+
+        Assert.That(
+            updateAddressResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.NoContent),
+            await updateAddressResponse.Content.ReadAsStringAsync());
+
+        using var setDefaultRequest = CreateRequest(
+            HttpMethod.Put,
+            $"/api/addresses/{secondAddress.Id:D}/default",
+            customer.AccessToken);
+        using var setDefaultResponse = await _client.SendAsync(setDefaultRequest);
+        Assert.That(setDefaultResponse.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+
+        using (var addressesRequest = CreateRequest(HttpMethod.Get, "/api/addresses/my", customer.AccessToken))
+        using (var addressesResponse = await _client.SendAsync(addressesRequest))
+        {
+            Assert.That(addressesResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            var addresses = await addressesResponse.Content.ReadFromJsonAsync<GetMyAddressesResponse>();
+            Assert.That(addresses, Is.Not.Null);
+            Assert.That(addresses!.Addresses, Has.Count.EqualTo(2));
+            Assert.That(addresses.Addresses.Single(address => address.Id == secondAddress.Id).IsDefault, Is.True);
+            Assert.That(addresses.Addresses.Single(address => address.Id == firstAddress.Id).IsDefault, Is.False);
+            Assert.That(
+                addresses.Addresses.Single(address => address.Id == secondAddress.Id).Title,
+                Is.EqualTo("Updated office"));
+        }
+
+        using var deleteAddressRequest = CreateRequest(
+            HttpMethod.Delete,
+            $"/api/addresses/{firstAddress.Id:D}",
+            customer.AccessToken);
+        using var deleteAddressResponse = await _client.SendAsync(deleteAddressRequest);
+        Assert.That(deleteAddressResponse.StatusCode, Is.EqualTo(HttpStatusCode.NoContent));
+
+        using (var remainingAddressesRequest = CreateRequest(HttpMethod.Get, "/api/addresses/my", customer.AccessToken))
+        using (var remainingAddressesResponse = await _client.SendAsync(remainingAddressesRequest))
+        {
+            Assert.That(remainingAddressesResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+            var addresses = await remainingAddressesResponse.Content.ReadFromJsonAsync<GetMyAddressesResponse>();
+            Assert.That(addresses!.Addresses, Has.Count.EqualTo(1));
+            Assert.That(addresses.Addresses.Single().Id, Is.EqualTo(secondAddress.Id));
+            Assert.That(addresses.Addresses.Single().IsDefault, Is.True);
+        }
+    }
+
+    [Test]
+    public async Task Refresh_endpoint_should_return_409_and_retry_after_for_a_second_tab()
+    {
+        var customer = await RegisterAndLoginAsync("refresh-conflict");
+
+        // The second browser tab presents the old cookie inside the configured rotation grace
+        // window. The real refresh-token service must return the retryable conflict response.
+        using var winningRotationResponse = await SendCookiePostAsync(
+            "/api/auth/refresh",
+            customer.RefreshCookie);
+        Assert.That(winningRotationResponse.StatusCode, Is.EqualTo(HttpStatusCode.OK));
+        var latestCookie = ReadRefreshCookie(winningRotationResponse);
+
+        using var conflictResponse = await SendCookiePostAsync(
+            "/api/auth/refresh",
+            customer.RefreshCookie);
+
+        Assert.That(conflictResponse.StatusCode, Is.EqualTo(HttpStatusCode.Conflict));
+        Assert.That(conflictResponse.Headers.TryGetValues("Retry-After", out var retryAfter), Is.True);
+        Assert.That(retryAfter!.Single(), Is.EqualTo("1"));
+
+        using var retryResponse = await SendCookiePostAsync("/api/auth/refresh", latestCookie);
+        Assert.That(
+            retryResponse.StatusCode,
+            Is.EqualTo(HttpStatusCode.OK),
+            await retryResponse.Content.ReadAsStringAsync());
     }
 
     [OneTimeTearDown]
@@ -167,7 +543,7 @@ public sealed class ApiEndToEndTests : PostgresTestBase
         SetBootstrapEnvironmentVariable("Jwt__Audience", "ECommerce.API");
         SetBootstrapEnvironmentVariable("Jwt__ExpirationMinutes", "60");
         SetBootstrapEnvironmentVariable("RefreshTokens__ExpirationDays", "30");
-        SetBootstrapEnvironmentVariable("RefreshTokens__RotationGracePeriodSeconds", "1");
+        SetBootstrapEnvironmentVariable("RefreshTokens__RotationGracePeriodSeconds", "5");
         SetBootstrapEnvironmentVariable("ZarinPal__Enabled", "true");
         SetBootstrapEnvironmentVariable("ZarinPal__MerchantId", "11111111-1111-1111-1111-111111111111");
         SetBootstrapEnvironmentVariable("ZarinPal__ApiBaseUrl", "https://sandbox.zarinpal.com");
@@ -557,9 +933,8 @@ public sealed class ApiEndToEndTests : PostgresTestBase
             Assert.That(rejectedRefresh.StatusCode, Is.EqualTo(HttpStatusCode.Forbidden));
         }
 
-        // This assertion verifies confirmed replay, not a second tab racing the rotation.
-        // Wait beyond the test host's one-second grace window before reusing the old cookie.
-        await Task.Delay(TimeSpan.FromMilliseconds(1_500));
+        // Wait beyond the test host's five-second grace window before reusing the old cookie.
+        await Task.Delay(TimeSpan.FromMilliseconds(5_500));
 
         using var replayResponse = await SendCookiePostAsync("/api/auth/refresh", initialSession.RefreshCookie);
         Assert.That(replayResponse.StatusCode, Is.EqualTo(HttpStatusCode.Unauthorized));
