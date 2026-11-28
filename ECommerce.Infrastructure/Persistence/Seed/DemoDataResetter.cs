@@ -64,6 +64,12 @@ public static class DemoDataResetter
             .Where(offer => !seededSellerIds.Contains(offer.SellerId))
             .ExecuteDeleteAsync(cancellationToken);
 
+        // ExecuteDeleteAsync bypasses EF's change tracker. Detach stale tracked rows
+        // before deleting visitor users; otherwise required/restricted relationships
+        // (for example ApplicationUser -> Order) can fail during relationship fixup
+        // even though the corresponding database rows have already been deleted.
+        dbContext.ChangeTracker.Clear();
+
         var visitorUsers = await userManager.Users
             .Where(user => !seededUserIds.Contains(user.Id))
             .ToListAsync(cancellationToken);
