@@ -75,6 +75,65 @@ jobs:
           --results-directory ./TestResults/ci
           --logger "trx;LogFileName=ecommerce-tests.trx"
 
+      - name: Summarize code coverage
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report_paths = sorted(Path("TestResults/ci").rglob("coverage.cobertura.xml"))
+          # Coverlet can expose the same report both as a result file and as a TRX attachment.
+          # Deduplicate identical copies so covered/valid counts are not double-counted.
+          reports_by_hash = {}
+          for report in report_paths:
+              digest = hashlib.sha256(report.read_bytes()).hexdigest()
+              reports_by_hash.setdefault(digest, report)
+          reports = list(reports_by_hash.values())
+          if not reports:
+              message = "No Cobertura coverage report was produced."
+              print(f"::error::{message}")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+                  summary.write("## Code coverage\n\n")
+                  summary.write(f"> {message}\n")
+              sys.exit(1)
+
+          totals = {
+              "lines-covered": 0,
+              "lines-valid": 0,
+              "branches-covered": 0,
+              "branches-valid": 0,
+          }
+
+          for report in reports:
+              root = ET.parse(report).getroot()
+              for key in totals:
+                  totals[key] += int(root.attrib.get(key, "0"))
+
+          lines_valid = totals["lines-valid"]
+          if lines_valid == 0:
+              raise SystemExit("Cobertura reports contain no valid lines.")
+
+          line_percent = totals["lines-covered"] / lines_valid * 100
+          branches_valid = totals["branches-valid"]
+          branch_percent = (
+              f"{totals['branches-covered'] / branches_valid * 100:.2f}%"
+              if branches_valid
+              else "N/A"
+          )
+
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("## Code coverage\n\n")
+              summary.write("| Metric | Result |\n|---|---:|\n")
+              summary.write(f"| Line coverage | **{line_percent:.2f}%** ({totals['lines-covered']}/{lines_valid}) |\n")
+              summary.write(f"| Branch coverage | {branch_percent} ({totals['branches-covered']}/{branches_valid}) |\n")
+              summary.write(f"| Cobertura reports | {len(reports)} |\n")
+          PY
+
       - name: Upload test and coverage results
         if: always()
         uses: actions/upload-artifact@v7
