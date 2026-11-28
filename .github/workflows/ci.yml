@@ -146,6 +146,9 @@ jobs:
       - name: Build Docker image
         run: docker build --pull --tag ecommerce-api:ci --file Dockerfile .
 
+      - name: Smoke test Docker image at runtime
+        run: bash ./scripts/ci/docker-runtime-smoke-test.sh ecommerce-api:ci
+
       - name: Validate public Demo Docker Compose configuration
         shell: bash
         run: |
