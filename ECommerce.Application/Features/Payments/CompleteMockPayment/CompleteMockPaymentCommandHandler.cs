@@ -67,10 +67,20 @@ public sealed class CompleteMockPaymentCommandHandler(
 
         var cutoffUtc = DateTime.UtcNow.Subtract(paymentWindow);
 
-        if (order.CreatedAt <= cutoffUtc)
+        // Match InitiatePayment: each new Payment starts its own window.
+        // Internal retries of the same payment do not extend that window.
+        var paymentWindowAnchorUtc = order.Payments
+            .OrderByDescending(candidate => candidate.CreatedAt)
+            .Select(candidate => candidate.CreatedAt)
+            .FirstOrDefault();
+
+        if (paymentWindowAnchorUtc == default)
+            paymentWindowAnchorUtc = order.CreatedAt;
+
+        if (paymentWindowAnchorUtc <= cutoffUtc)
         {
             throw new BusinessRuleException(
-                "The payment window for this order has expired.");
+                "The payment window for the latest payment attempt has expired.");
         }
 
         var gatewayResult = await paymentGateway.ProcessAsync(
